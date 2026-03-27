@@ -147,7 +147,7 @@ function calcTicket(inputs, org) {
     overtimeCost: overtimeCost,
     advancedTotal: advancedTotal,
     hasAdvanced: hasAdvanced,
-    get perTicketDirect() { return this.customerDirect + this.supportDirect + this.resourceCost; },
+    get perTicketDirect() { return this.customerDirect + this.supportDirect + this.resourceCost + this.advancedTotal; },
     get perTicketOpportunity() { return this.customerOpportunity + this.supportOpportunity; },
     get perTicketTotal() { return this.customerTotal + this.supportTotal + this.resourceCost + this.advancedTotal; },
     get annualDirect() { return this.perTicketDirect * inputs.annualTickets; },
@@ -168,7 +168,7 @@ function calcROI(inputs) {
     let pvBenefits = 0;
     for (let y = 1; y <= n; y++) pvBenefits += netAnnualBenefit / Math.pow(1 + inputs.discountRate, y);
     npvResults[n] = -inputs.oneTimeInvestment + pvBenefits;
-    const totalBenefits = netAnnualBenefit * n;
+    const totalBenefits = annualSavings * n;
     const totalCosts = inputs.oneTimeInvestment + inputs.annualRecurringCost * n;
     roiResults[n] = totalCosts > 0 ? ((totalBenefits - totalCosts) / totalCosts) * 100 : 0;
   }
@@ -329,7 +329,13 @@ function OrgSettings({ org, setOrg }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <Input label="Organization Name" type="text" value={org.orgName} onChange={(v) => setOrg({ ...org, orgName: v })} />
             <Input label="Total Employees" value={org.totalEmployees} onChange={(v) => setOrg({ ...org, totalEmployees: v })} />
-            <Input label="Annual Revenue ($, optional)" value={org.annualRevenue} onChange={(v) => setOrg({ ...org, annualRevenue: v })} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Annual Revenue ($, optional)</label>
+              <input type="number" value={org.annualRevenue} min="0"
+                onChange={(e) => setOrg({ ...org, annualRevenue: e.target.value === "" ? "" : (parseFloat(e.target.value) || 0) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                placeholder="Leave empty for multiplier-based" />
+            </div>
             <Input label="Annual Work Hours" value={org.annualWorkHours} onChange={(v) => setOrg({ ...org, annualWorkHours: v })} />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -482,8 +488,14 @@ function RecurringIssueTab({ org }) {
       <div className="space-y-4">
         <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-2">
           <h3 className="font-semibold text-blue-700">Quick Start</h3>
-          <Select label="Load a common scenario" value="" onChange={applyTemplate}
-            options={[{ value: "", label: "— Select a template —" }, ...TEMPLATES.map((t) => ({ value: t.name, label: t.name }))]} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Load a common scenario</label>
+            <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }}>
+              <option value="">— Select a template —</option>
+              {TEMPLATES.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
           <p className="text-xs text-blue-600">Selecting a template fills in typical values. Your advanced factors and context-switch settings are preserved.</p>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg space-y-3">
@@ -541,11 +553,11 @@ function RecurringIssueTab({ org }) {
                 <h4 className="text-sm font-semibold text-gray-700">Workaround Labor</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <Input label="% of Affected Who Work Around" value={inputs.advanced.workaroundPct}
-                    onChange={(v) => setAdv("workaroundPct", v)} />
+                    onChange={(v) => setAdv("workaroundPct", Math.min(v, 99))} />
                   <Input label="Workaround Time (min each)" value={inputs.advanced.workaroundMinutes}
                     onChange={(v) => setAdv("workaroundMinutes", v)} />
                 </div>
-                <p className="text-xs text-gray-500">People who hit the same issue but don't call the help desk — they just lose time working around it. This is invisible ticket volume.</p>
+                <p className="text-xs text-gray-500">People who hit the same issue but don't call the help desk — they just lose time working around it. This is invisible ticket volume.{inputs.advanced.workaroundPct >= 99 ? <span className="text-amber-600 font-medium"> Capped at 99% — at 100% the ratio becomes undefined (no one calls the help desk, so there are no tickets to measure against).</span> : null}</p>
               </div>
 
               <div className="bg-white rounded-lg p-3 space-y-3">
@@ -646,8 +658,8 @@ function RecurringIssueTab({ org }) {
           <div className="mt-3 p-3 bg-white rounded-lg">
             <div className="text-xs text-gray-500 mb-1">Daily Cost to Organization</div>
             <div className="flex justify-between">
-              <span className="text-sm text-gray-600">Conservative: <strong>{fmtD(r.annualDirect / (org.annualWorkHours / 8))}</strong>/day</span>
-              <span className="text-sm text-gray-600">Full Impact: <strong>{fmtD(r.annualTotal / (org.annualWorkHours / 8))}</strong>/day</span>
+              <span className="text-sm text-gray-600">Conservative: <strong>{org.annualWorkHours > 0 ? fmtD(r.annualDirect / (org.annualWorkHours / 8)) : "N/A"}</strong>/day</span>
+              <span className="text-sm text-gray-600">Full Impact: <strong>{org.annualWorkHours > 0 ? fmtD(r.annualTotal / (org.annualWorkHours / 8)) : "N/A"}</strong>/day</span>
             </div>
           </div>
         </ResultCard>
@@ -826,9 +838,15 @@ function ImprovementROITab({ org }) {
           <p className="text-xs text-gray-500 mb-3">What if the improvement % is higher or lower than expected?</p>
           <div className="space-y-3">
             {sensitivity.map((s) => {
-              const maxNpv = Math.max(...sensitivity.map((x) => Math.abs(x.npv3)), 1);
-              const barWidth = Math.max(5, Math.abs(s.npv3) / maxNpv * 100);
-              const barColor = { amber: "bg-amber-400", blue: "bg-blue-500", green: "bg-green-500" }[s.color];
+              const allNpvs = sensitivity.map((x) => x.npv3);
+              const anyPositive = allNpvs.some((v) => v > 0);
+              const maxAbs = Math.max(...allNpvs.map((v) => Math.abs(v)), 1);
+              const barWidth = anyPositive
+                ? (s.npv3 > 0 ? Math.max(5, s.npv3 / Math.max(...allNpvs.filter((v) => v > 0), 1) * 100) : 5)
+                : Math.max(5, Math.abs(s.npv3) / maxAbs * 100);
+              const barColor = s.npv3 >= 0
+                ? ({ amber: "bg-amber-400", blue: "bg-blue-500", green: "bg-green-500" }[s.color])
+                : "bg-red-400";
               return (
                 <div key={s.label}>
                   <div className="flex justify-between text-sm mb-1">
@@ -1094,7 +1112,7 @@ function DowntimeCostTab({ org }) {
             </div>
           </div>
           <div className="mt-3 text-xs text-gray-500">
-            Cost per minute of downtime: {fmtD(r.eventTotal / (inputs.downtimeHours * 60))}
+            Cost per minute of downtime: {inputs.downtimeHours > 0 ? fmtD(r.eventTotal / (inputs.downtimeHours * 60)) : "N/A"}
           </div>
         </ResultCard>
 
@@ -1121,52 +1139,58 @@ function DowntimeCostTab({ org }) {
 
 // ─── Tab 5: Compare Options ──────────────────────────────────
 function CompareTab({ org }) {
-  const defaultOpt = {
-    role: "Clinical Staff", salary: 55000, timePerTicket: 25, supportTime: 10,
-    annualTickets: 500, solutionOneTime: 0, solutionRecurring: 0, improvementPct: 0,
-  };
+  const [baseline, setBaseline] = useState({
+    role: "Clinical Staff", salary: 55000, timePerTicket: 25,
+    supportTier: "Tier 1 Support", supportSalary: 35000, supportTime: 10, annualTickets: 500,
+  });
   const [options, setOptions] = useState([
-    { name: "Do Nothing", ...defaultOpt, isBaseline: true },
-    { name: "Option A", ...defaultOpt, solutionOneTime: 25000, solutionRecurring: 5000, improvementPct: 50 },
-    { name: "Option B", ...defaultOpt, solutionOneTime: 75000, solutionRecurring: 2000, improvementPct: 80 },
+    { name: "Do Nothing", isBaseline: true },
+    { name: "Option A", solutionOneTime: 25000, solutionRecurring: 5000, improvementPct: 50 },
+    { name: "Option B", solutionOneTime: 75000, solutionRecurring: 2000, improvementPct: 80 },
   ]);
 
+  const setBase = (field, value) => setBaseline((p) => ({ ...p, [field]: value }));
+  const handleBaseRoleChange = (v) => { setBase("role", v); const r = ROLES.find((r) => r.name === v); if (r) setBase("salary", r.defaultSalary); };
+  const handleBaseTierChange = (v) => { setBase("supportTier", v); const t = SUPPORT_TIERS.find((t) => t.name === v); if (t) setBase("supportSalary", t.defaultSalary); };
   const setOpt = (idx, field, value) => {
     setOptions((prev) => prev.map((o, i) => i === idx ? { ...o, [field]: value } : o));
   };
 
-  const results = useMemo(() => {
-    return options.map((opt) => {
-      const ticketInputs = {
-        customerSalary: opt.salary, customerTime: opt.timePerTicket, holdTime: 0,
-        includeContextSwitch: false, supportSalary: 35000, supportTime: opt.supportTime,
-        resourceCost: 0, annualTickets: opt.annualTickets, advanced: {},
-      };
-      const ticket = calcTicket(ticketInputs, org);
-      const currentAnnualCost = ticket.annualTotal;
-      const costPerTicket = ticket.perTicketTotal;
+  const baselineTicket = useMemo(() => {
+    const ticketInputs = {
+      customerSalary: baseline.salary, customerTime: baseline.timePerTicket, holdTime: 0,
+      includeContextSwitch: false, supportSalary: baseline.supportSalary, supportTime: baseline.supportTime,
+      resourceCost: 0, annualTickets: baseline.annualTickets, advanced: {},
+    };
+    return calcTicket(ticketInputs, org);
+  }, [baseline, org]);
 
+  const results = useMemo(() => {
+    const currentAnnualCost = baselineTicket.annualTotal;
+
+    return options.map((opt) => {
       if (opt.isBaseline) {
-        return { costPerTicket, currentAnnualCost, annualSavings: 0, paybackMonths: Infinity, npv3: 0, threeYearTotalCost: currentAnnualCost * 3 };
+        return { currentAnnualCost, annualSavings: 0, solutionCost: 0, paybackMonths: Infinity, npv3: 0, threeYearTotalCost: currentAnnualCost * 3 };
       }
 
       const roiInputs = {
-        currentAnnualCost, oneTimeInvestment: opt.solutionOneTime,
-        annualRecurringCost: opt.solutionRecurring, improvementPct: opt.improvementPct,
+        currentAnnualCost, oneTimeInvestment: opt.solutionOneTime || 0,
+        annualRecurringCost: opt.solutionRecurring || 0, improvementPct: opt.improvementPct || 0,
         confidenceFactor: 1.0, discountRate: org.discountRate,
       };
       const roi = calcROI(roiInputs);
-      const threeYearTotalCost = currentAnnualCost * 3 - roi.annualSavings * 3 + opt.solutionOneTime + opt.solutionRecurring * 3;
-      return { costPerTicket, currentAnnualCost, annualSavings: roi.annualSavings, paybackMonths: roi.paybackMonths, npv3: roi.npvResults[3], threeYearTotalCost };
+      const solutionCost = (opt.solutionOneTime || 0) + (opt.solutionRecurring || 0) * 3;
+      const threeYearTotalCost = currentAnnualCost * 3 - roi.annualSavings * 3 + solutionCost;
+      return { currentAnnualCost, annualSavings: roi.annualSavings, solutionCost, paybackMonths: roi.paybackMonths, npv3: roi.npvResults[3], threeYearTotalCost };
     });
-  }, [options, org]);
+  }, [options, baselineTicket, org]);
 
   const bestIdx = results.reduce((best, r, i) => r.threeYearTotalCost < results[best].threeYearTotalCost ? i : best, 0);
 
   const metrics = [
-    { label: "Cost per Ticket", key: "costPerTicket", format: fmtD },
-    { label: "Annual Cost", key: "currentAnnualCost", format: fmt },
+    { label: "Baseline Annual Cost", key: "currentAnnualCost", format: fmt },
     { label: "Annual Savings", key: "annualSavings", format: fmt },
+    { label: "3-Year Solution Cost", key: "solutionCost", format: fmt },
     { label: "Payback Period", key: "paybackMonths", format: (v) => v === Infinity ? "N/A" : `${v.toFixed(1)} mo` },
     { label: "3-Year NPV", key: "npv3", format: fmt },
     { label: "3-Year Total Cost", key: "threeYearTotalCost", format: fmt },
@@ -1174,25 +1198,35 @@ function CompareTab({ org }) {
 
   return (
     <div className="space-y-6">
+      <div className="bg-gray-50 p-4 rounded-lg space-y-3 border border-gray-200">
+        <h3 className="font-semibold text-gray-700">Problem Definition (shared across all options)</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Select label="Customer Role" value={baseline.role} onChange={handleBaseRoleChange}
+            options={ROLES.map((r) => ({ value: r.name, label: `${r.name} (${fmt(r.defaultSalary)})` }))} />
+          <Input label="Customer Salary" value={baseline.salary} onChange={(v) => setBase("salary", v)} />
+          <Input label="Customer Time per Ticket (min)" value={baseline.timePerTicket} onChange={(v) => setBase("timePerTicket", v)} />
+          <Input label="Annual Tickets" value={baseline.annualTickets} onChange={(v) => setBase("annualTickets", v)} />
+          <Select label="Support Tier" value={baseline.supportTier} onChange={handleBaseTierChange}
+            options={SUPPORT_TIERS.map((t) => ({ value: t.name, label: `${t.name} (${fmt(t.defaultSalary)})` }))} />
+          <Input label="Support Salary" value={baseline.supportSalary} onChange={(v) => setBase("supportSalary", v)} />
+          <Input label="Support Time (min)" value={baseline.supportTime} onChange={(v) => setBase("supportTime", v)} />
+          <StatBox label="Annual Cost" value={fmt(baselineTicket.annualTotal)} sublabel={`${fmtD(baselineTicket.perTicketTotal)}/ticket`} color="blue" />
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {options.map((opt, idx) => (
           <div key={idx} className={`bg-gray-50 p-4 rounded-lg space-y-3 border-2 ${idx === bestIdx ? "border-green-400 bg-green-50" : "border-transparent"}`}>
             <Input label="Option Name" type="text" value={opt.name} onChange={(v) => setOpt(idx, "name", v)} />
-            <Select label="Role" value={opt.role} onChange={(v) => { setOpt(idx, "role", v); const r = ROLES.find((r) => r.name === v); if (r) setOpt(idx, "salary", r.defaultSalary); }}
-              options={ROLES.map((r) => ({ value: r.name, label: `${r.name} (${fmt(r.defaultSalary)})` }))} />
-            <Input label="Base Salary" value={opt.salary} onChange={(v) => setOpt(idx, "salary", v)} />
-            <Input label="Time per Ticket (min)" value={opt.timePerTicket} onChange={(v) => setOpt(idx, "timePerTicket", v)} />
-            <Input label="Support Time (min)" value={opt.supportTime} onChange={(v) => setOpt(idx, "supportTime", v)} />
-            <Input label="Annual Tickets" value={opt.annualTickets} onChange={(v) => setOpt(idx, "annualTickets", v)} />
-            {!opt.isBaseline && (
+            {opt.isBaseline ? (
+              <p className="text-sm text-gray-500">Current state — no investment, no improvement. Uses the problem definition above.</p>
+            ) : (
               <>
-                <hr className="border-gray-300" />
-                <h4 className="text-sm font-semibold text-gray-600">Solution Investment</h4>
-                <Input label="One-Time Cost ($)" value={opt.solutionOneTime} onChange={(v) => setOpt(idx, "solutionOneTime", v)} />
-                <Input label="Annual Recurring ($)" value={opt.solutionRecurring} onChange={(v) => setOpt(idx, "solutionRecurring", v)} />
+                <Input label="One-Time Cost ($)" value={opt.solutionOneTime || 0} onChange={(v) => setOpt(idx, "solutionOneTime", v)} />
+                <Input label="Annual Recurring ($)" value={opt.solutionRecurring || 0} onChange={(v) => setOpt(idx, "solutionRecurring", v)} />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expected Improvement: {opt.improvementPct}%</label>
-                  <input type="range" min="0" max="100" step="5" value={opt.improvementPct}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expected Improvement: {opt.improvementPct || 0}%</label>
+                  <input type="range" min="0" max="100" step="5" value={opt.improvementPct || 0}
                     onChange={(e) => setOpt(idx, "improvementPct", parseInt(e.target.value))} className="w-full" />
                 </div>
               </>
@@ -1240,7 +1274,7 @@ function ActionBar() {
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 no-print">
       <div className="flex items-center gap-3 flex-wrap">
         <button onClick={() => window.print()} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">🖨️ Print / Save PDF</button>
-        <span className="text-xs text-gray-400">Tip: Use your browser's Print → Save as PDF for a clean export. All inputs are kept in your browser between sessions.</span>
+        <span className="text-xs text-gray-400">Tip: Use your browser's Print → Save as PDF for a clean export. Organization settings are kept in your browser between sessions.</span>
       </div>
     </div>
   );
@@ -1305,7 +1339,7 @@ function App() {
       <ActionBar />
 
       <div className="mt-4 text-center text-xs text-gray-400 no-print">
-        TCO/ROI Calculator · Formulas based on Forrester TEI, Gartner, and industry benchmarks · Built for IT Business Analysis
+        TCO/ROI Calculator · Formulas based on Forrester TEI, Gartner, and industry benchmarks · Built for IT Business Analysis · <a href="guide.html" className="text-gray-400 hover:text-blue-400 transition-colors underline">Methodology Guide</a>
       </div>
     </div>
   );

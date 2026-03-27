@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TCO/ROI Calculator — Methodology Guide</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .print-break { page-break-before: always; }
+      body { font-size: 11pt; line-height: 1.4; }
+      h1, h2, h3 { page-break-after: avoid; }
+      table { page-break-inside: avoid; }
+      section { page-break-inside: avoid; }
+      .card-avoid-break { page-break-inside: avoid; }
+    }
+    .formula { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
+
+  <!-- ════════════════════════════════════════════════════════════
+       HERO HEADER
+       ════════════════════════════════════════════════════════════ -->
+  <header class="bg-blue-600 text-white px-8 py-12 md:px-12 md:py-16">
+    <div class="max-w-5xl mx-auto">
+      <div class="flex justify-between items-start">
+        <div>
+          <h1 class="text-4xl md:text-5xl font-bold tracking-tight">TCO / ROI Calculator</h1>
+          <p class="text-blue-100 text-lg md:text-xl mt-2">Methodology &amp; Reference Guide</p>
+          <p class="text-blue-200 text-sm mt-4">For IT directors, finance stakeholders, and anyone who needs to understand and trust the numbers.</p>
+        </div>
+        <a href="index.html" class="no-print text-blue-200 hover:text-white text-sm border border-blue-400 rounded-md px-3 py-1.5 hover:border-white transition-colors whitespace-nowrap mt-1">&larr; Back to Calculator</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto">
+
+    <!-- ════════════════════════════════════════════════════════════
+         SECTION 1: WHAT THIS CALCULATOR DOES
+         ════════════════════════════════════════════════════════════ -->
+    <section class="bg-white px-8 py-10 md:px-12 md:py-14 rounded-b-lg shadow-sm">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">1</span>
+        <h2 class="text-2xl md:text-3xl font-bold text-gray-800">What This Calculator Does</h2>
+      </div>
+
+      <p class="text-gray-600 leading-relaxed max-w-3xl mb-8">
+        This calculator provides comprehensive Total Cost of Ownership and Return on Investment analysis for IT-related issues and investments. Unlike simple cost estimators, it surfaces <strong>hidden costs</strong> — opportunity cost, workaround labor, error rework, management overhead — giving you the full financial picture needed for confident decision-making.
+      </p>
+
+      <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Five Analysis Modes</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <!-- Tab 1 -->
+        <div class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 card-avoid-break">
+          <div class="text-2xl mb-2">&#x1F504;</div>
+          <div class="font-semibold text-gray-800 text-sm">Recurring Issue Cost</div>
+          <div class="text-xs text-gray-500 mt-1">"What does this recurring issue actually cost us?"</div>
+        </div>
+        <!-- Tab 2 -->
+        <div class="bg-green-50 border-2 border-green-200 rounded-lg p-4 card-avoid-break">
+          <div class="text-2xl mb-2">&#x1F4C8;</div>
+          <div class="font-semibold text-gray-800 text-sm">Improvement ROI</div>
+          <div class="text-xs text-gray-500 mt-1">"Will this improvement pay for itself?"</div>
+        </div>
+        <!-- Tab 3 -->
+        <div class="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 card-avoid-break">
+          <div class="text-2xl mb-2">&#x1F3D7;&#xFE0F;</div>
+          <div class="font-semibold text-gray-800 text-sm">Implementation TCO</div>
+          <div class="text-xs text-gray-500 mt-1">"What's the true cost of implementing this?"</div>
+        </div>
+        <!-- Tab 4 -->
+        <div class="bg-red-50 border-2 border-red-200 rounded-lg p-4 card-avoid-break">
+          <div class="text-2xl mb-2">&#x26A1;</div>
+          <div class="font-semibold text-gray-800 text-sm">Downtime Cost</div>
+          <div class="text-xs text-gray-500 mt-1">"How much does an outage really cost?"</div>
+        </div>
+        <!-- Tab 5 -->
+        <div class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 card-avoid-break">
+          <div class="text-2xl mb-2">&#x2696;&#xFE0F;</div>
+          <div class="font-semibold text-gray-800 text-sm">Compare Options</div>
+          <div class="text-xs text-gray-500 mt-1">"Which option is the best value?"</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         SECTION 2: THE THREE-LAYER COST MODEL
+         ════════════════════════════════════════════════════════════ -->
+    <section class="bg-gray-50 px-8 py-10 md:px-12 md:py-14 mt-6 rounded-lg shadow-sm print-break">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">2</span>
+        <h2 class="text-2xl md:text-3xl font-bold text-gray-800">The Three-Layer Cost Model</h2>
+      </div>
+
+      <p class="text-gray-600 leading-relaxed max-w-3xl mb-8">
+        Most TCO tools only show <strong>direct cost</strong> — what you paid in salary for unproductive time. This calculator adds two more layers to show the full organizational impact. Every cost output uses this same consistent structure.
+      </p>
+
+      <!-- Diagram: Three layers -->
+      <div class="flex flex-col md:flex-row items-stretch gap-2 md:gap-0 mb-10">
+        <!-- Layer 1: Direct -->
+        <div class="flex-1 bg-blue-50 border-2 border-blue-300 rounded-lg md:rounded-r-none p-5 card-avoid-break">
+          <div class="flex items-center gap-2 mb-2">
+            <svg class="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/></svg>
+            <span class="font-bold text-blue-700 text-lg">Direct Cost</span>
+          </div>
+          <p class="text-sm text-gray-600">What you <strong>paid</strong> for unproductive time. Salary and benefits still going out the door.</p>
+          <div class="formula text-xs bg-blue-100 rounded px-2 py-1 mt-3 text-blue-800">Loaded Hourly &times; Wasted Hours</div>
+        </div>
+        <!-- Arrow -->
+        <div class="hidden md:flex items-center text-gray-300 text-3xl font-bold px-1 self-center">+</div>
+        <!-- Layer 2: Opportunity -->
+        <div class="flex-1 bg-amber-50 border-2 border-amber-300 rounded-lg md:rounded-none p-5 card-avoid-break">
+          <div class="flex items-center gap-2 mb-2">
+            <svg class="w-6 h-6 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/></svg>
+            <span class="font-bold text-amber-700 text-lg">Opportunity Cost</span>
+          </div>
+          <p class="text-sm text-gray-600">The <strong>additional</strong> value lost beyond compensation — the delta between what you paid and what that hour would have generated.</p>
+          <div class="formula text-xs bg-amber-100 rounded px-2 py-1 mt-3 text-amber-800">(Value/Hr &minus; Loaded Hourly) &times; Wasted Hours</div>
+        </div>
+        <!-- Arrow -->
+        <div class="hidden md:flex items-center text-gray-300 text-3xl font-bold px-1 self-center">=</div>
+        <!-- Layer 3: Total -->
+        <div class="flex-1 bg-green-50 border-2 border-green-300 rounded-lg md:rounded-l-none p-5 card-avoid-break">
+          <div class="flex items-center gap-2 mb-2">
+            <svg class="w-6 h-6 text-green-500" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/></svg>
+            <span class="font-bold text-green-700 text-lg">Total Impact</span>
+          </div>
+          <p class="text-sm text-gray-600">The <strong>full value</strong> that hour would have generated for the organization.</p>
+          <div class="formula text-xs bg-green-100 rounded px-2 py-1 mt-3 text-green-800">Value/Hr &times; Wasted Hours</div>
+        </div>
+      </div>
+
+      <!-- Worked Example -->
+      <div class="bg-white rounded-lg border border-gray-200 p-6 shadow-sm card-avoid-break">
+        <h3 class="font-bold text-gray-700 mb-1">Concrete Example: Password Reset Ticket</h3>
+        <p class="text-sm text-gray-500 mb-5">Clinical staff member ($55K salary) calls about an access issue. 15 min hold + 10 min active = 25 min wasted.</p>
+
+        <div class="grid md:grid-cols-2 gap-6">
+          <!-- Assumptions -->
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Assumptions</h4>
+            <table class="text-sm w-full">
+              <tbody>
+                <tr><td class="py-1 text-gray-500">Base salary</td><td class="py-1 text-right font-medium">$55,000</td></tr>
+                <tr><td class="py-1 text-gray-500">Benefits multiplier</td><td class="py-1 text-right font-medium">1.4x</td></tr>
+                <tr><td class="py-1 text-gray-500">Value multiplier</td><td class="py-1 text-right font-medium">2.0x</td></tr>
+                <tr><td class="py-1 text-gray-500">Annual work hours</td><td class="py-1 text-right font-medium">2,080</td></tr>
+                <tr><td class="py-1 text-gray-500">Time wasted</td><td class="py-1 text-right font-medium">25 min (0.417 hr)</td></tr>
+                <tr class="border-t"><td class="py-1 text-gray-500">Annual tickets</td><td class="py-1 text-right font-medium">1,904</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- Results -->
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Customer Cost Per Ticket</h4>
+            <table class="text-sm w-full">
+              <tbody>
+                <tr><td class="py-1 text-gray-500">Loaded hourly</td><td class="py-1 text-right font-medium">$55K &times; 1.4 / 2,080 = <strong>$37.02</strong></td></tr>
+                <tr><td class="py-1 text-gray-500">Value/hour</td><td class="py-1 text-right font-medium">$37.02 &times; 2.0 = <strong>$74.04</strong></td></tr>
+                <tr class="border-t"><td class="py-1 text-blue-600 font-medium">Direct cost</td><td class="py-1 text-right font-bold text-blue-600">$15.42</td></tr>
+                <tr><td class="py-1 text-amber-600 font-medium">Opportunity cost</td><td class="py-1 text-right font-bold text-amber-600">$15.43</td></tr>
+                <tr class="border-t border-gray-300"><td class="py-1 text-green-700 font-semibold">Total impact</td><td class="py-1 text-right font-bold text-green-700">$30.85</td></tr>
+              </tbody>
+            </table>
+            <div class="mt-4 bg-gray-50 rounded p-3">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Scaled to 1,904 Tickets/Year</h4>
+              <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div><div class="text-blue-600 font-bold text-base">$33,100</div>Conservative</div>
+                <div><div class="text-amber-600 font-bold text-base">$33,121</div>Opportunity</div>
+                <div><div class="text-green-700 font-bold text-base">$66,221</div>Full Impact</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         SECTION 3: HOW EACH TAB WORKS
+         ════════════════════════════════════════════════════════════ -->
+    <section class="px-8 py-10 md:px-12 md:py-14 mt-6 print-break">
+      <div class="flex items-center gap-3 mb-8">
+        <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">3</span>
+        <h2 class="text-2xl md:text-3xl font-bold text-gray-800">How Each Tab Works</h2>
+      </div>
+
+      <!-- Tab 1: Recurring Issue Cost -->
+      <div class="bg-white rounded-lg border-2 border-blue-200 p-6 mb-5 shadow-sm card-avoid-break">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-2xl">&#x1F504;</span>
+          <h3 class="text-xl font-bold text-gray-800">Recurring Issue Cost</h3>
+          <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Tab 1</span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Inputs Needed</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Employee role and salary (the person affected)</li>
+              <li>Active time + hold/wait time per incident</li>
+              <li>Support tier and salary</li>
+              <li>Support resolution time</li>
+              <li>Annual ticket volume</li>
+              <li><em class="text-gray-400">Optional:</em> Hidden cost factors (workarounds, repeat contacts, error/rework, escalations, overtime)</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">When to Use</h4>
+            <p class="text-sm text-gray-600">Quantifying the true cost of recurring IT issues — password resets, system access problems, manual processes, application errors.</p>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">What It Calculates</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Per-ticket cost (three-layer breakdown)</li>
+              <li>Annual cost at current volume</li>
+              <li>Sensitivity analysis (savings at various reduction %)</li>
+              <li>Hidden cost factor breakdown</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Key Formula</h4>
+            <div class="formula text-xs bg-blue-50 border border-blue-200 rounded p-3 text-gray-700">
+              Per-Ticket = (Customer Hours &times; Value/Hr)<br/>
+              &nbsp;&nbsp;+ (Support Hours &times; Value/Hr &times; Repeat &times; Multi-Touch)<br/>
+              &nbsp;&nbsp;+ Resource Cost + Hidden Factors<br/><br/>
+              Annual Cost = Per-Ticket &times; Annual Volume
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Improvement ROI -->
+      <div class="bg-white rounded-lg border-2 border-green-200 p-6 mb-5 shadow-sm card-avoid-break">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-2xl">&#x1F4C8;</span>
+          <h3 class="text-xl font-bold text-gray-800">Improvement ROI</h3>
+          <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Tab 2</span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Inputs Needed</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Current annual cost of the problem</li>
+              <li>Expected improvement percentage</li>
+              <li>Confidence level (conservative / moderate / aggressive)</li>
+              <li>One-time investment cost</li>
+              <li>Annual recurring cost of the solution</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">When to Use</h4>
+            <p class="text-sm text-gray-600">Building a business case for a proposed solution. Feeds directly from Tab 1's annual cost output.</p>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">What It Calculates</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Confidence-adjusted annual savings</li>
+              <li>Payback period in months</li>
+              <li>ROI % at 1, 2, 3, and 5 years</li>
+              <li>Net Present Value (NPV) at each horizon</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Key Formula</h4>
+            <div class="formula text-xs bg-green-50 border border-green-200 rounded p-3 text-gray-700">
+              Savings = Annual Cost &times; Improvement% &times; Confidence<br/>
+              Net Benefit = Savings &minus; Recurring Cost<br/>
+              Payback = Investment &divide; (Net Benefit / 12) months<br/>
+              NPV = &minus;Investment + &sum;(Benefit / (1 + r)<sup>year</sup>)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Implementation TCO -->
+      <div class="bg-white rounded-lg border-2 border-purple-200 p-6 mb-5 shadow-sm card-avoid-break print-break">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-2xl">&#x1F3D7;&#xFE0F;</span>
+          <h3 class="text-xl font-bold text-gray-800">Implementation TCO</h3>
+          <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Tab 3</span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Inputs Needed</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Software/hardware costs (one-time)</li>
+              <li>Implementation services</li>
+              <li>Internal staff hours and salary</li>
+              <li>Training hours per person, number of trainees</li>
+              <li>Productivity dip %, transition weeks, affected employees</li>
+              <li>Recurring licensing and support costs</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">When to Use</h4>
+            <p class="text-sm text-gray-600">Evaluating the true cost of a new system or major change — beyond the vendor's sticker price.</p>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">What It Calculates</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Year 1 total cost of ownership</li>
+              <li>5-year total cost of ownership</li>
+              <li>Hidden cost ratio (% of costs typically overlooked)</li>
+              <li>Breakdown: direct costs vs. labor vs. training vs. productivity loss</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Key Formula</h4>
+            <div class="formula text-xs bg-purple-50 border border-purple-200 rounded p-3 text-gray-700">
+              Year 1 TCO = Direct Costs + Internal Labor<br/>
+              &nbsp;&nbsp;+ Training Cost + Productivity Loss<br/>
+              5-Year TCO = Year 1 + (Ongoing Annual &times; 4)<br/>
+              Hidden Cost % = (Training + Prod. Loss) / Year 1
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Downtime Cost -->
+      <div class="bg-white rounded-lg border-2 border-red-200 p-6 mb-5 shadow-sm card-avoid-break">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-2xl">&#x26A1;</span>
+          <h3 class="text-xl font-bold text-gray-800">Downtime Cost</h3>
+          <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Tab 4</span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Inputs Needed</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Number of affected employees</li>
+              <li>Average salary of affected staff</li>
+              <li>Downtime duration in hours</li>
+              <li>Revenue impact percentage</li>
+              <li>Recovery costs (overtime, emergency vendor, etc.)</li>
+              <li>Expected events per year</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">When to Use</h4>
+            <p class="text-sm text-gray-600">Quantifying outage impact for incident response planning, disaster recovery investment, or SLA negotiations.</p>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">What It Calculates</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Per-event cost (conservative and full impact)</li>
+              <li>Lost productivity component</li>
+              <li>Lost revenue component</li>
+              <li>Annualized downtime cost</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Key Formula</h4>
+            <div class="formula text-xs bg-red-50 border border-red-200 rounded p-3 text-gray-700">
+              Event Cost = (Employees &times; Hourly Rate &times; Hours)<br/>
+              &nbsp;&nbsp;+ Lost Revenue + Recovery Costs<br/>
+              Annual = Event Cost &times; Events per Year
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 5: Compare Options -->
+      <div class="bg-white rounded-lg border-2 border-amber-200 p-6 mb-2 shadow-sm card-avoid-break">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-2xl">&#x2696;&#xFE0F;</span>
+          <h3 class="text-xl font-bold text-gray-800">Compare Options</h3>
+          <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Tab 5</span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Inputs Needed</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Baseline scenario (current state costs)</li>
+              <li>Up to 3 alternative scenarios</li>
+              <li>Per-ticket time and cost for each option</li>
+              <li>Annual ticket volume</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">When to Use</h4>
+            <p class="text-sm text-gray-600">Choosing between competing solutions, vendors, or approaches with a side-by-side cost comparison.</p>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">What It Calculates</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>Side-by-side annual cost comparison</li>
+              <li>Net difference from baseline for each option</li>
+              <li>Annual savings per alternative</li>
+              <li>Best value indicator</li>
+            </ul>
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Key Formula</h4>
+            <div class="formula text-xs bg-amber-50 border border-amber-200 rounded p-3 text-gray-700">
+              Option Cost = Per-Ticket Cost &times; Annual Volume<br/>
+              Savings vs. Baseline = Baseline Cost &minus; Option Cost
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         SECTION 4: THE FORMULAS
+         ════════════════════════════════════════════════════════════ -->
+    <section class="bg-white px-8 py-10 md:px-12 md:py-14 mt-6 rounded-lg shadow-sm print-break">
+      <div class="flex items-center gap-3 mb-8">
+        <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">4</span>
+        <h2 class="text-2xl md:text-3xl font-bold text-gray-800">The Formulas</h2>
+      </div>
+
+      <!-- Group A: Cost Engine -->
+      <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span>
+        Cost Engine
+      </h3>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border border-gray-200 rounded-lg">
+          <thead class="bg-blue-50 text-left">
+            <tr>
+              <th class="p-2.5 font-semibold text-gray-700 w-1/4">Formula</th>
+              <th class="p-2.5 font-semibold text-gray-700 w-2/5">Equation</th>
+              <th class="p-2.5 font-semibold text-gray-700">What It Tells You</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2.5 font-medium">Loaded Hourly Cost</td><td class="p-2.5 formula text-xs">Salary &times; Benefits Multiplier / Annual Hours</td><td class="p-2.5 text-gray-600">Fully-burdened cost per hour including benefits, taxes, overhead</td></tr>
+            <tr><td class="p-2.5 font-medium">Value/Hr (revenue)</td><td class="p-2.5 formula text-xs">(Revenue / Employees &times; Utilization) / Annual Hours</td><td class="p-2.5 text-gray-600">Economic value generated per productive hour</td></tr>
+            <tr><td class="p-2.5 font-medium">Value/Hr (fallback)</td><td class="p-2.5 formula text-xs">Loaded Hourly &times; Value Multiplier</td><td class="p-2.5 text-gray-600">Estimate when revenue data is unavailable (default 2.0x)</td></tr>
+            <tr><td class="p-2.5 font-medium text-blue-600">Direct Cost</td><td class="p-2.5 formula text-xs">Loaded Hourly &times; Wasted Hours</td><td class="p-2.5 text-gray-600">What you paid for unproductive time</td></tr>
+            <tr><td class="p-2.5 font-medium text-amber-600">Opportunity Cost</td><td class="p-2.5 formula text-xs">(Value/Hr &minus; Loaded Hourly) &times; Wasted Hours</td><td class="p-2.5 text-gray-600">Additional value lost beyond compensation</td></tr>
+            <tr><td class="p-2.5 font-medium text-green-700">Total Impact</td><td class="p-2.5 formula text-xs">Value/Hr &times; Wasted Hours</td><td class="p-2.5 text-gray-600">Full value that hour would have generated</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Group B: Recurring Issues -->
+      <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-blue-400 inline-block"></span>
+        Recurring Issues
+      </h3>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border border-gray-200 rounded-lg">
+          <thead class="bg-blue-50 text-left">
+            <tr>
+              <th class="p-2.5 font-semibold text-gray-700 w-1/4">Formula</th>
+              <th class="p-2.5 font-semibold text-gray-700 w-2/5">Equation</th>
+              <th class="p-2.5 font-semibold text-gray-700">What It Tells You</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2.5 font-medium">Per-Ticket Cost</td><td class="p-2.5 formula text-xs">Customer Impact + Support Impact + Resources + Hidden Factors</td><td class="p-2.5 text-gray-600">Total cost of a single incident</td></tr>
+            <tr><td class="p-2.5 font-medium">Annual Cost</td><td class="p-2.5 formula text-xs">Per-Ticket &times; Annual Volume</td><td class="p-2.5 text-gray-600">Yearly burden of a recurring issue</td></tr>
+            <tr><td class="p-2.5 font-medium">Repeat Multiplier</td><td class="p-2.5 formula text-xs">1 + (1 &minus; FCR Rate)</td><td class="p-2.5 text-gray-600">Adjustment for tickets needing multiple contacts</td></tr>
+            <tr><td class="p-2.5 font-medium">Workaround Cost</td><td class="p-2.5 formula text-xs">Value/Hr &times; (Min / 60) &times; (Workaround% / (1 &minus; Workaround%))</td><td class="p-2.5 text-gray-600">Hidden cost of users who don't call — they just work around it</td></tr>
+            <tr><td class="p-2.5 font-medium">Sensitivity</td><td class="p-2.5 formula text-xs">Annual Cost &times; Reduction%</td><td class="p-2.5 text-gray-600">Potential savings at various improvement levels</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Group C: ROI -->
+      <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2 print-break">
+        <span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>
+        ROI Analysis
+      </h3>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border border-gray-200 rounded-lg">
+          <thead class="bg-green-50 text-left">
+            <tr>
+              <th class="p-2.5 font-semibold text-gray-700 w-1/4">Formula</th>
+              <th class="p-2.5 font-semibold text-gray-700 w-2/5">Equation</th>
+              <th class="p-2.5 font-semibold text-gray-700">What It Tells You</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2.5 font-medium">Annual Savings</td><td class="p-2.5 formula text-xs">Current Cost &times; Improvement% &times; Confidence Factor</td><td class="p-2.5 text-gray-600">Expected yearly benefit, adjusted for estimation uncertainty</td></tr>
+            <tr><td class="p-2.5 font-medium">Net Annual Benefit</td><td class="p-2.5 formula text-xs">Annual Savings &minus; Recurring Cost</td><td class="p-2.5 text-gray-600">Savings minus ongoing solution cost</td></tr>
+            <tr><td class="p-2.5 font-medium">Payback Period</td><td class="p-2.5 formula text-xs">Investment / (Net Benefit / 12)</td><td class="p-2.5 text-gray-600">Months until investment is recouped</td></tr>
+            <tr><td class="p-2.5 font-medium">ROI %</td><td class="p-2.5 formula text-xs">((Benefits &minus; Costs) / Costs) &times; 100</td><td class="p-2.5 text-gray-600">Return relative to total investment</td></tr>
+            <tr><td class="p-2.5 font-medium">Net Present Value</td><td class="p-2.5 formula text-xs">&minus;Investment + &sum;(Benefit / (1 + r)<sup>year</sup>)</td><td class="p-2.5 text-gray-600">Time-value-adjusted net return (default 8% discount rate)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Group D: Implementation -->
+      <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span>
+        Implementation TCO
+      </h3>
+      <div class="overflow-x-auto mb-8">
+        <table class="w-full text-sm border border-gray-200 rounded-lg">
+          <thead class="bg-purple-50 text-left">
+            <tr>
+              <th class="p-2.5 font-semibold text-gray-700 w-1/4">Formula</th>
+              <th class="p-2.5 font-semibold text-gray-700 w-2/5">Equation</th>
+              <th class="p-2.5 font-semibold text-gray-700">What It Tells You</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2.5 font-medium">Year 1 TCO</td><td class="p-2.5 formula text-xs">Direct + Labor + Training + Productivity Loss</td><td class="p-2.5 text-gray-600">Full first-year implementation cost</td></tr>
+            <tr><td class="p-2.5 font-medium">Ongoing Annual</td><td class="p-2.5 formula text-xs">Licensing + Support/Maintenance</td><td class="p-2.5 text-gray-600">Year 2+ recurring costs</td></tr>
+            <tr><td class="p-2.5 font-medium">5-Year TCO</td><td class="p-2.5 formula text-xs">Year 1 + (Annual &times; 4)</td><td class="p-2.5 text-gray-600">Total ownership over five years</td></tr>
+            <tr><td class="p-2.5 font-medium">Hidden Cost Ratio</td><td class="p-2.5 formula text-xs">(Training + Prod. Loss) / Year 1 Total &times; 100</td><td class="p-2.5 text-gray-600">Percentage of costs typically overlooked (usually 40&ndash;60%)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Group E: Downtime -->
+      <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
+        Downtime Cost
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border border-gray-200 rounded-lg">
+          <thead class="bg-red-50 text-left">
+            <tr>
+              <th class="p-2.5 font-semibold text-gray-700 w-1/4">Formula</th>
+              <th class="p-2.5 font-semibold text-gray-700 w-2/5">Equation</th>
+              <th class="p-2.5 font-semibold text-gray-700">What It Tells You</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2.5 font-medium">Lost Productivity</td><td class="p-2.5 formula text-xs">Employees &times; Loaded Hourly &times; Hours</td><td class="p-2.5 text-gray-600">Direct labor cost of idle workers</td></tr>
+            <tr><td class="p-2.5 font-medium">Lost Revenue</td><td class="p-2.5 formula text-xs">(Revenue / Work Hours) &times; Downtime &times; Impact%</td><td class="p-2.5 text-gray-600">Revenue impact during the outage</td></tr>
+            <tr><td class="p-2.5 font-medium">Per-Event Cost</td><td class="p-2.5 formula text-xs">Productivity + Revenue Loss + Recovery</td><td class="p-2.5 text-gray-600">Total cost of a single outage</td></tr>
+            <tr><td class="p-2.5 font-medium">Annualized</td><td class="p-2.5 formula text-xs">Event Cost &times; Events/Year</td><td class="p-2.5 text-gray-600">Expected yearly downtime cost</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="text-xs text-gray-400 mt-6">
+        All formulas based on Forrester TEI methodology, Gartner research, Nielsen Norman Group, HDI benchmarks, and SHRM retention studies.
+      </p>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════
+         SECTION 5: WHAT MAKES THIS DIFFERENT
+         ════════════════════════════════════════════════════════════ -->
+    <section class="bg-gray-50 px-8 py-10 md:px-12 md:py-14 mt-6 rounded-lg shadow-sm print-break">
+      <div class="flex items-center gap-3 mb-8">
+        <span class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-lg flex-shrink-0">5</span>
+        <h2 class="text-2xl md:text-3xl font-bold text-gray-800">What Makes This Different</h2>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border border-gray-200 rounded-lg bg-white">
+          <thead>
+            <tr>
+              <th class="p-3 text-left bg-gray-100 text-gray-500 font-semibold w-1/2 rounded-tl-lg">Typical TCO Calculator</th>
+              <th class="p-3 text-left bg-purple-50 text-purple-700 font-semibold w-1/2 rounded-tr-lg">This Calculator</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr>
+              <td class="p-3 text-gray-400 line-through">Only shows direct costs (salary paid for idle time)</td>
+              <td class="p-3 text-purple-800 font-medium">Three-layer cost model: Direct Cost + Opportunity Cost = Total Impact. Shows both conservative and full-impact numbers side by side.</td>
+            </tr>
+            <tr>
+              <td class="p-3 text-gray-400 line-through">Ignores what happens outside the help desk ticket</td>
+              <td class="p-3 text-purple-800 font-medium">Models six hidden cost factors: workaround labor, repeat contacts, error/rework, management overhead, overtime/backlog, and context switching.</td>
+            </tr>
+            <tr>
+              <td class="p-3 text-gray-400 line-through">Produces a single point estimate</td>
+              <td class="p-3 text-purple-800 font-medium">Confidence-adjusted estimates (conservative / moderate / aggressive) so you can present numbers you trust to any audience.</td>
+            </tr>
+            <tr>
+              <td class="p-3 text-gray-400 line-through">Uses arbitrary cost multipliers or flat hourly rates</td>
+              <td class="p-3 text-purple-800 font-medium">Revenue-based value/hr grounded in organizational data (revenue per employee &times; utilization), with a fallback multiplier when revenue data is unavailable.</td>
+            </tr>
+            <tr>
+              <td class="p-3 text-gray-400 line-through">Accepts the vendor's sticker price as the total cost</td>
+              <td class="p-3 text-purple-800 font-medium">Explicitly calculates and exposes the hidden cost ratio — training, productivity loss, and transition costs that typically account for 40&ndash;60% of implementation cost.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════
+       FOOTER
+       ════════════════════════════════════════════════════════════ -->
+  <footer class="max-w-5xl mx-auto mt-8 mb-12 py-6 text-center text-xs text-gray-400 border-t border-gray-200">
+    <a href="index.html" class="text-gray-400 hover:text-blue-500 transition-colors no-print">&larr; Back to Calculator</a>
+    <span class="no-print"> &middot; </span>
+    TCO/ROI Calculator Methodology Guide &middot; Formulas based on Forrester TEI, Gartner, and industry benchmarks
+  </footer>
+
+</body>
+</html>

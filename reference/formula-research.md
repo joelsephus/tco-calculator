@@ -245,7 +245,7 @@ Payback Period (months) = One-Time Investment / (Net Annual Benefit / 12)
 ROI % = ((Total Benefits over N years − Total Costs over N years) / Total Costs) × 100
 
 Where:
-  Total Benefits = Net Annual Benefit × N years
+  Total Benefits = Annual Savings × N years  (gross savings, before recurring costs)
   Total Costs = One-Time Investment + (Annual Recurring Cost × N years)
 ```
 
