@@ -55,6 +55,17 @@ const SUPPORT_TIERS = [
   { name: "Manager/Director", defaultSalary: 90000 },
 ];
 
+const TEMPLATES = [
+  { name: "Password Resets", problemName: "Password Reset Issues", customerRole: "Clinical Staff", customerSalary: 55000, customerTime: 10, holdTime: 15, supportTier: "Tier 1 Support", supportSalary: 35000, supportTime: 5, resourceCost: 0, annualTickets: 500 },
+  { name: "System Access Issues", problemName: "System Access / Login Issues", customerRole: "Administrative/Clerical", customerSalary: 40000, customerTime: 20, holdTime: 20, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 15, resourceCost: 0, annualTickets: 300 },
+  { name: "Application Errors", problemName: "Application Errors / Crashes", customerRole: "Clinical Staff", customerSalary: 55000, customerTime: 15, holdTime: 10, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 20, resourceCost: 0, annualTickets: 250 },
+  { name: "Hardware Failure", problemName: "Hardware Failure / Replacement", customerRole: "Administrative/Clerical", customerSalary: 40000, customerTime: 30, holdTime: 30, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 45, resourceCost: 500, annualTickets: 100 },
+  { name: "Network Issues", problemName: "Network Connectivity Issues", customerRole: "IT/Technical Staff", customerSalary: 65000, customerTime: 15, holdTime: 10, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 25, resourceCost: 0, annualTickets: 200 },
+  { name: "Manual Data Entry", problemName: "Manual Data Entry / Processing", customerRole: "Administrative/Clerical", customerSalary: 40000, customerTime: 20, holdTime: 0, supportTier: "Tier 1 Support", supportSalary: 35000, supportTime: 5, resourceCost: 0, annualTickets: 1000 },
+  { name: "Report Generation", problemName: "Report Generation Requests", customerRole: "Management/Director", customerSalary: 85000, customerTime: 5, holdTime: 0, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 30, resourceCost: 0, annualTickets: 150 },
+  { name: "Onboarding IT Setup", problemName: "New Employee IT Onboarding", customerRole: "Administrative/Clerical", customerSalary: 40000, customerTime: 60, holdTime: 0, supportTier: "Tier 2 Support", supportSalary: 55000, supportTime: 60, resourceCost: 200, annualTickets: 120 },
+];
+
 // ─── Formula Engine ─────────────────────────────────────────
 function loadedHourlyCost(salary, mult, hours = 2080) {
   if (hours <= 0) return 0;
@@ -267,6 +278,35 @@ function StatBox({ label, value, sublabel, color = "gray" }) {
   );
 }
 
+function ExecSummary({ generateText }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const text = open ? generateText() : "";
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="no-print">
+      <button onClick={() => { setOpen(!open); setCopied(false); }}
+        className="w-full px-4 py-2.5 bg-gray-700 text-white rounded-md text-sm hover:bg-gray-800 flex justify-between items-center">
+        <span>📄 {open ? "Hide" : "Generate"} Executive Summary</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{text}</pre>
+          <button onClick={handleCopy}
+            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
+            {copied ? "✓ Copied!" : "📋 Copy to Clipboard"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Org Settings Panel ─────────────────────────────────────
 function OrgSettings({ org, setOrg }) {
   const [open, setOpen] = useState(false);
@@ -368,6 +408,25 @@ function RecurringIssueTab({ org }) {
     if (t) set("supportSalary", t.defaultSalary);
   };
 
+  const applyTemplate = (templateName) => {
+    if (!templateName) return;
+    const t = TEMPLATES.find((t) => t.name === templateName);
+    if (!t) return;
+    setInputs((p) => ({
+      ...p,
+      problemName: t.problemName,
+      customerRole: t.customerRole,
+      customerSalary: t.customerSalary,
+      customerTime: t.customerTime,
+      holdTime: t.holdTime,
+      supportTier: t.supportTier,
+      supportSalary: t.supportSalary,
+      supportTime: t.supportTime,
+      resourceCost: t.resourceCost,
+      annualTickets: t.annualTickets,
+    }));
+  };
+
   const r = useMemo(() => calcTicket(inputs, org), [inputs, org]);
 
   const copyResults = () => {
@@ -400,12 +459,33 @@ function RecurringIssueTab({ org }) {
     );
     if (r.hasAdvanced) lines.push(`Annual Hidden Costs: ${fmt(r.annualAdvanced)}`);
     lines.push("", `${inputs.reductionPct}% Reduction Value: ${fmt(r.annualTotal * inputs.reductionPct / 100)}/year`);
+    lines.push("", "COST OF DELAY", `Monthly: ${fmt(r.annualTotal / 12)}`, `Weekly: ${fmt(r.annualTotal / 52)}`);
     navigator.clipboard.writeText(lines.join("\n"));
+  };
+
+  const generateExecSummary = () => {
+    const date = new Date().toLocaleDateString();
+    const totalTime = inputs.customerTime + inputs.holdTime + (inputs.includeContextSwitch ? org.contextSwitchMinutes : 0);
+    return [
+      `${org.orgName} is currently experiencing ${inputs.problemName}, generating approximately ${fmtNum(inputs.annualTickets)} support tickets annually. Each incident affects ${inputs.customerRole} staff (${fmt(inputs.customerSalary)} base salary) for ${totalTime} minutes and requires ${inputs.supportTier} resolution time of ${inputs.supportTime} minutes.`,
+      "",
+      `The total cost of this issue is ${fmt(r.annualTotal)} per year (${fmtD(r.perTicketTotal)} per ticket). Direct labor costs account for ${fmt(r.annualDirect)} annually, with an additional ${fmt(r.annualOpportunity)} in opportunity costs from lost productive capacity.${r.hasAdvanced ? ` Hidden factors including workarounds, errors, and management overhead add ${fmt(r.annualAdvanced)} annually.` : ""} Every month of inaction costs the organization ${fmt(r.annualTotal / 12)}.`,
+      "",
+      `Recommendation: A ${inputs.reductionPct}% reduction in ticket volume would save ${fmt(r.annualTotal * inputs.reductionPct / 100)} per year. Any solution costing less than this amount will deliver positive ROI within 12 months. We recommend proceeding to the Improvement ROI tab to model specific investment scenarios.`,
+      "",
+      `Analysis prepared ${date} using ${org.orgName} organizational parameters.`,
+    ].join("\n");
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="space-y-4">
+        <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-2">
+          <h3 className="font-semibold text-blue-700">Quick Start</h3>
+          <Select label="Load a common scenario" value="" onChange={applyTemplate}
+            options={[{ value: "", label: "— Select a template —" }, ...TEMPLATES.map((t) => ({ value: t.name, label: t.name }))]} />
+          <p className="text-xs text-blue-600">Selecting a template fills in typical values. Your advanced factors and context-switch settings are preserved.</p>
+        </div>
         <div className="bg-gray-50 p-4 rounded-lg space-y-3">
           <h3 className="font-semibold text-gray-700">Issue Details</h3>
           <Input label="Problem/Issue Name" type="text" value={inputs.problemName} onChange={(v) => set("problemName", v)} />
@@ -588,6 +668,17 @@ function RecurringIssueTab({ org }) {
           </div>
         </ResultCard>
 
+        <ResultCard title="Cost of Delay" icon="⏰" color="red">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <StatBox label="Monthly Cost of Inaction" value={fmt(r.annualTotal / 12)} color="red" />
+            <StatBox label="Weekly Cost of Inaction" value={fmt(r.annualTotal / 52)} color="red" />
+          </div>
+          <p className="text-sm text-red-700 bg-red-50 rounded p-2">
+            Every month this decision is delayed costs <strong>{fmt(r.annualTotal / 12)}</strong>.
+            Over the next 6 months, that's <strong>{fmt(r.annualTotal / 2)}</strong> in preventable losses.
+          </p>
+        </ResultCard>
+
         <div className="flex gap-2 no-print">
           <button onClick={copyResults} className="px-4 py-2 bg-gray-600 text-white rounded-md text-sm hover:bg-gray-700">
             📋 Copy as Text
@@ -599,6 +690,8 @@ function RecurringIssueTab({ org }) {
           Total customer time: {inputs.customerTime + inputs.holdTime + (inputs.includeContextSwitch ? org.contextSwitchMinutes : 0)} min.
           {!org.annualRevenue && " Value/Hr uses multiplier method (enter org revenue for revenue-based calculation)."}
         </div>
+
+        <ExecSummary generateText={generateExecSummary} />
       </div>
     </div>
   );
@@ -607,8 +700,8 @@ function RecurringIssueTab({ org }) {
 // ─── Tab 2: Improvement ROI ─────────────────────────────────
 function ImprovementROITab({ org }) {
   const [inputs, setInputs] = useState({
-    scenarioName: "Fix Avatar Access Issues",
-    currentAnnualCost: 66221,
+    scenarioName: "Fix Password Reset Issues",
+    currentAnnualCost: 50000,
     oneTimeInvestment: 25000,
     annualRecurringCost: 5000,
     improvementPct: 50,
@@ -624,8 +717,39 @@ function ImprovementROITab({ org }) {
 
   const r = useMemo(() => calcROI(inputs), [inputs]);
 
+  const sensitivity = useMemo(() => {
+    const scenarios = [
+      { label: "Pessimistic (-30%)", factor: 0.7, color: "amber" },
+      { label: "Expected", factor: 1.0, color: "blue" },
+      { label: "Optimistic (+30%)", factor: 1.3, color: "green" },
+    ];
+    return scenarios.map((s) => {
+      const adjInputs = { ...inputs, improvementPct: Math.min(100, inputs.improvementPct * s.factor) };
+      const res = calcROI(adjInputs);
+      return { ...s, npv3: res.npvResults[3], payback: res.paybackMonths, roi3: res.roiResults[3] };
+    });
+  }, [inputs]);
+
   const confidenceLabels = { 0.6: "Conservative", 0.8: "Moderate", 1.0: "Aggressive" };
   const closestLabel = confidenceLabels[inputs.confidenceFactor] || `${Math.round(inputs.confidenceFactor * 100)}%`;
+
+  const generateExecSummary = () => {
+    const date = new Date().toLocaleDateString();
+    const paybackStr = r.paybackMonths === Infinity ? "does not achieve payback" : `achieves payback in ${r.paybackMonths.toFixed(1)} months`;
+    return [
+      `This analysis evaluates "${inputs.scenarioName}", a proposed investment of ${fmt(inputs.oneTimeInvestment)} (one-time) plus ${fmt(inputs.annualRecurringCost)}/year recurring to address a current annual cost of ${fmt(inputs.currentAnnualCost)}. The expected improvement is ${inputs.improvementPct}% at ${closestLabel} confidence (${Math.round(inputs.confidenceFactor * 100)}%).`,
+      "",
+      `The investment generates ${fmt(r.annualSavings)} in annual savings (${fmt(r.netAnnualBenefit)} net of recurring costs) and ${paybackStr}. The 3-year NPV is ${fmt(r.npvResults[3])} with a 3-year ROI of ${fmtPct(r.roiResults[3])}. The 5-year NPV is ${fmt(r.npvResults[5])}.`,
+      "",
+      r.paybackMonths <= 12
+        ? `Recommendation: This is a strong investment that pays for itself in under a year. Every month of delay costs ${fmt(r.netAnnualBenefit / 12)} in unrealized savings. We recommend immediate approval and implementation.`
+        : r.paybackMonths <= 36
+        ? `Recommendation: This investment shows reasonable returns with payback in ${r.paybackMonths.toFixed(0)} months. Consider strategic alignment and non-financial benefits when making the final decision.`
+        : `Recommendation: The extended payback period suggests this investment should be re-evaluated. Consider reducing scope, negotiating better pricing, or identifying additional benefit streams.`,
+      "",
+      `Analysis prepared ${date} using ${org.orgName} organizational parameters (${fmtPct(inputs.discountRate * 100)} discount rate).`,
+    ].join("\n");
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -697,6 +821,59 @@ function ImprovementROITab({ org }) {
             </p>
           </div>
         </ResultCard>
+
+        <ResultCard title="Sensitivity Analysis" icon="📊" color="blue">
+          <p className="text-xs text-gray-500 mb-3">What if the improvement % is higher or lower than expected?</p>
+          <div className="space-y-3">
+            {sensitivity.map((s) => {
+              const maxNpv = Math.max(...sensitivity.map((x) => Math.abs(x.npv3)), 1);
+              const barWidth = Math.max(5, Math.abs(s.npv3) / maxNpv * 100);
+              const barColor = { amber: "bg-amber-400", blue: "bg-blue-500", green: "bg-green-500" }[s.color];
+              return (
+                <div key={s.label}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700 font-medium">{s.label}</span>
+                    <span className="text-gray-500">Improvement: {fmtPct(Math.min(100, inputs.improvementPct * s.factor))}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-gray-200 rounded-full h-6 overflow-hidden">
+                      <div className={`h-full rounded-full ${barColor} transition-all duration-300`} style={{ width: `${barWidth}%` }}></div>
+                    </div>
+                    <span className={`text-sm font-bold whitespace-nowrap ${s.npv3 >= 0 ? "text-green-700" : "text-red-600"}`}>{fmt(s.npv3)}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    Payback: {s.payback === Infinity ? "Never" : `${s.payback.toFixed(1)} mo`} · 3-yr ROI: {fmtPct(s.roi3)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {sensitivity[0].npv3 > 0 && (
+            <p className="text-sm text-green-700 bg-green-50 rounded p-2 mt-3">
+              Even in the pessimistic scenario, this investment has a positive 3-year NPV of {fmt(sensitivity[0].npv3)}.
+            </p>
+          )}
+          {sensitivity[0].npv3 <= 0 && sensitivity[1].npv3 > 0 && (
+            <p className="text-sm text-amber-700 bg-amber-50 rounded p-2 mt-3">
+              The expected case is positive, but a 30% underperformance would result in negative NPV. Consider risk mitigation strategies.
+            </p>
+          )}
+        </ResultCard>
+
+        {r.netAnnualBenefit > 0 && (
+          <ResultCard title="Cost of Delay" icon="⏰" color="red">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <StatBox label="Monthly Unrealized Savings" value={fmt(r.netAnnualBenefit / 12)} color="red" />
+              <StatBox label="Weekly Unrealized Savings" value={fmt(r.netAnnualBenefit / 52)} color="red" />
+            </div>
+            <p className="text-sm text-red-700 bg-red-50 rounded p-2">
+              Every month you delay this investment costs <strong>{fmt(r.netAnnualBenefit / 12)}</strong> in unrealized savings.
+              A 6-month delay means <strong>{fmt(r.netAnnualBenefit / 2)}</strong> left on the table.
+            </p>
+          </ResultCard>
+        )}
+
+        <ExecSummary generateText={generateExecSummary} />
       </div>
     </div>
   );
@@ -723,6 +900,19 @@ function ImplementationTCOTab({ org }) {
   });
   const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
   const r = useMemo(() => calcImplementation(inputs, org), [inputs, org]);
+
+  const generateExecSummary = () => {
+    const date = new Date().toLocaleDateString();
+    return [
+      `This analysis calculates the Total Cost of Ownership for "${inputs.projectName}". The apparent direct costs (software, hardware, implementation services, and first-year licensing) total ${fmt(r.directCosts)}. However, the true Year 1 TCO is ${fmt(r.year1Total)} when accounting for all cost components.`,
+      "",
+      `Hidden costs represent ${fmtPct(r.hiddenPct)} of the Year 1 investment. Training costs add ${fmt(r.trainingCost)} (${fmtNum(inputs.numTrainees)} employees x ${inputs.trainingHoursPerPerson} hours each), and the productivity dip during transition adds ${fmt(r.productivityLoss)} (${inputs.affectedEmployees} employees at ${inputs.productivityDipPct}% reduced productivity for ${inputs.transitionWeeks} weeks). Internal labor contributes ${fmt(r.laborCost)}. The 5-year total TCO is ${fmt(r.fiveYearTotal)}, with ongoing annual costs of ${fmt(r.ongoingAnnual)}.`,
+      "",
+      `Recommendation: The apparent cost of ${fmt(r.directCosts)} understates the true investment by ${fmt(r.year1Total - r.directCosts)}. Budget planning should account for the full ${fmt(r.year1Total)} Year 1 cost. Consider phased rollouts to reduce the productivity dip impact, and factor in adequate training time to minimize the learning curve.`,
+      "",
+      `Analysis prepared ${date} using ${org.orgName} organizational parameters.`,
+    ].join("\n");
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -817,6 +1007,8 @@ function ImplementationTCOTab({ org }) {
             </p>
           </div>
         </ResultCard>
+
+        <ExecSummary generateText={generateExecSummary} />
       </div>
     </div>
   );
@@ -835,6 +1027,19 @@ function DowntimeCostTab({ org }) {
   });
   const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
   const r = useMemo(() => calcDowntime(inputs, org), [inputs, org]);
+
+  const generateExecSummary = () => {
+    const date = new Date().toLocaleDateString();
+    return [
+      `This analysis estimates the cost of "${inputs.eventName}" events affecting ${fmtNum(inputs.affectedEmployees)} employees for ${inputs.downtimeHours} hour(s) per incident. At the current frequency of ${inputs.eventsPerYear} events per year, this represents a recurring organizational impact.`,
+      "",
+      `Each event costs ${fmt(r.eventDirect)} in direct costs (conservative) or ${fmt(r.eventTotal)} at full impact including opportunity cost.${r.lostRevenue > 0 ? ` Lost revenue adds ${fmt(r.lostRevenue)} per event.` : ""}${r.recoveryCosts > 0 ? ` Recovery costs add ${fmt(r.recoveryCosts)} per event.` : ""} The cost per minute of downtime is ${fmtD(r.eventTotal / (inputs.downtimeHours * 60))}. Annualized, these events cost ${fmt(r.annualDirect)} (conservative) to ${fmt(r.annualTotal)} (full impact).`,
+      "",
+      `Recommendation: Eliminating these events saves ${fmt(r.annualTotal)} per year. An investment of up to ${fmt(r.annualTotal * 3)} would pay for itself within 3 years. Prioritize prevention over remediation — the cost of downtime far exceeds the cost of proactive infrastructure investment.`,
+      "",
+      `Analysis prepared ${date} using ${org.orgName} organizational parameters.`,
+    ].join("\n");
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -907,7 +1112,124 @@ function DowntimeCostTab({ org }) {
             {inputs.downtimeHours >= 4 && <p className="text-amber-700">⚠️ Extended outages ({inputs.downtimeHours}+ hours) may also incur compliance, patient safety, and reputational costs not captured here.</p>}
           </div>
         </ResultCard>
+
+        <ExecSummary generateText={generateExecSummary} />
       </div>
+    </div>
+  );
+}
+
+// ─── Tab 5: Compare Options ──────────────────────────────────
+function CompareTab({ org }) {
+  const defaultOpt = {
+    role: "Clinical Staff", salary: 55000, timePerTicket: 25, supportTime: 10,
+    annualTickets: 500, solutionOneTime: 0, solutionRecurring: 0, improvementPct: 0,
+  };
+  const [options, setOptions] = useState([
+    { name: "Do Nothing", ...defaultOpt, isBaseline: true },
+    { name: "Option A", ...defaultOpt, solutionOneTime: 25000, solutionRecurring: 5000, improvementPct: 50 },
+    { name: "Option B", ...defaultOpt, solutionOneTime: 75000, solutionRecurring: 2000, improvementPct: 80 },
+  ]);
+
+  const setOpt = (idx, field, value) => {
+    setOptions((prev) => prev.map((o, i) => i === idx ? { ...o, [field]: value } : o));
+  };
+
+  const results = useMemo(() => {
+    return options.map((opt) => {
+      const ticketInputs = {
+        customerSalary: opt.salary, customerTime: opt.timePerTicket, holdTime: 0,
+        includeContextSwitch: false, supportSalary: 35000, supportTime: opt.supportTime,
+        resourceCost: 0, annualTickets: opt.annualTickets, advanced: {},
+      };
+      const ticket = calcTicket(ticketInputs, org);
+      const currentAnnualCost = ticket.annualTotal;
+      const costPerTicket = ticket.perTicketTotal;
+
+      if (opt.isBaseline) {
+        return { costPerTicket, currentAnnualCost, annualSavings: 0, paybackMonths: Infinity, npv3: 0, threeYearTotalCost: currentAnnualCost * 3 };
+      }
+
+      const roiInputs = {
+        currentAnnualCost, oneTimeInvestment: opt.solutionOneTime,
+        annualRecurringCost: opt.solutionRecurring, improvementPct: opt.improvementPct,
+        confidenceFactor: 1.0, discountRate: org.discountRate,
+      };
+      const roi = calcROI(roiInputs);
+      const threeYearTotalCost = currentAnnualCost * 3 - roi.annualSavings * 3 + opt.solutionOneTime + opt.solutionRecurring * 3;
+      return { costPerTicket, currentAnnualCost, annualSavings: roi.annualSavings, paybackMonths: roi.paybackMonths, npv3: roi.npvResults[3], threeYearTotalCost };
+    });
+  }, [options, org]);
+
+  const bestIdx = results.reduce((best, r, i) => r.threeYearTotalCost < results[best].threeYearTotalCost ? i : best, 0);
+
+  const metrics = [
+    { label: "Cost per Ticket", key: "costPerTicket", format: fmtD },
+    { label: "Annual Cost", key: "currentAnnualCost", format: fmt },
+    { label: "Annual Savings", key: "annualSavings", format: fmt },
+    { label: "Payback Period", key: "paybackMonths", format: (v) => v === Infinity ? "N/A" : `${v.toFixed(1)} mo` },
+    { label: "3-Year NPV", key: "npv3", format: fmt },
+    { label: "3-Year Total Cost", key: "threeYearTotalCost", format: fmt },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {options.map((opt, idx) => (
+          <div key={idx} className={`bg-gray-50 p-4 rounded-lg space-y-3 border-2 ${idx === bestIdx ? "border-green-400 bg-green-50" : "border-transparent"}`}>
+            <Input label="Option Name" type="text" value={opt.name} onChange={(v) => setOpt(idx, "name", v)} />
+            <Select label="Role" value={opt.role} onChange={(v) => { setOpt(idx, "role", v); const r = ROLES.find((r) => r.name === v); if (r) setOpt(idx, "salary", r.defaultSalary); }}
+              options={ROLES.map((r) => ({ value: r.name, label: `${r.name} (${fmt(r.defaultSalary)})` }))} />
+            <Input label="Base Salary" value={opt.salary} onChange={(v) => setOpt(idx, "salary", v)} />
+            <Input label="Time per Ticket (min)" value={opt.timePerTicket} onChange={(v) => setOpt(idx, "timePerTicket", v)} />
+            <Input label="Support Time (min)" value={opt.supportTime} onChange={(v) => setOpt(idx, "supportTime", v)} />
+            <Input label="Annual Tickets" value={opt.annualTickets} onChange={(v) => setOpt(idx, "annualTickets", v)} />
+            {!opt.isBaseline && (
+              <>
+                <hr className="border-gray-300" />
+                <h4 className="text-sm font-semibold text-gray-600">Solution Investment</h4>
+                <Input label="One-Time Cost ($)" value={opt.solutionOneTime} onChange={(v) => setOpt(idx, "solutionOneTime", v)} />
+                <Input label="Annual Recurring ($)" value={opt.solutionRecurring} onChange={(v) => setOpt(idx, "solutionRecurring", v)} />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expected Improvement: {opt.improvementPct}%</label>
+                  <input type="range" min="0" max="100" step="5" value={opt.improvementPct}
+                    onChange={(e) => setOpt(idx, "improvementPct", parseInt(e.target.value))} className="w-full" />
+                </div>
+              </>
+            )}
+            {idx === bestIdx && (
+              <div className="text-center text-sm font-bold text-green-700 bg-green-100 rounded p-2">★ Best Option</div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <ResultCard title="Comparison Results" icon="⚖️" color="blue">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b">
+                <th className="py-2 text-left">Metric</th>
+                {options.map((opt, i) => (
+                  <th key={i} className={`py-2 text-right ${i === bestIdx ? "text-green-700" : ""}`}>{opt.name}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.map((metric) => (
+                <tr key={metric.label} className="border-b border-gray-100">
+                  <td className="py-2 text-gray-700 font-medium">{metric.label}</td>
+                  {results.map((r, i) => (
+                    <td key={i} className={`py-2 text-right ${i === bestIdx ? "font-bold text-green-700" : ""}`}>
+                      {metric.format(r[metric.key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ResultCard>
     </div>
   );
 }
@@ -947,6 +1269,7 @@ function App() {
     { id: "roi", label: "Improvement ROI", icon: "📈" },
     { id: "implementation", label: "Implementation TCO", icon: "🏗️" },
     { id: "downtime", label: "Downtime Cost", icon: "⚡" },
+    { id: "compare", label: "Compare Options", icon: "⚖️" },
   ];
 
   return (
@@ -976,6 +1299,7 @@ function App() {
         {activeTab === "roi" && <ImprovementROITab org={org} />}
         {activeTab === "implementation" && <ImplementationTCOTab org={org} />}
         {activeTab === "downtime" && <DowntimeCostTab org={org} />}
+        {activeTab === "compare" && <CompareTab org={org} />}
       </div>
 
       <ActionBar />
