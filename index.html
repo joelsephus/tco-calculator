@@ -12,7 +12,10 @@
     @media print {
       .no-print { display: none !important; }
       .print-break { page-break-before: always; }
-      body { font-size: 11pt; }
+      body { font-size: 11pt; line-height: 1.4; }
+      h1, h2, h3 { page-break-after: avoid; }
+      table { page-break-inside: avoid; }
+      .rounded-lg { page-break-inside: avoid; }
     }
   </style>
 </head>
@@ -20,7 +23,8 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useCallback, useMemo } = React;
+const { useState, useEffect, useMemo } = React;
+const SCHEMA_VERSION = 2;
 
 // ─── Default Data ───────────────────────────────────────────
 const DEFAULT_ORG = {
@@ -53,12 +57,13 @@ const SUPPORT_TIERS = [
 
 // ─── Formula Engine ─────────────────────────────────────────
 function loadedHourlyCost(salary, mult, hours = 2080) {
-  return (salary * mult) / hours;
+  if (hours <= 0) return 0;
+  return (Math.max(0, salary) * mult) / hours;
 }
 
 function valuePerHour(org, loadedHourly) {
   const rev = parseFloat(org.annualRevenue);
-  if (rev > 0 && org.totalEmployees > 0) {
+  if (rev > 0 && org.totalEmployees > 0 && org.annualWorkHours > 0) {
     const rpe = rev / org.totalEmployees;
     return (rpe * org.billableUtilization) / org.annualWorkHours;
   }
@@ -88,7 +93,9 @@ function calcTicket(inputs, org) {
   // Workaround labor: invisible cost from people who don't call
   const workaroundPct = (adv.workaroundPct || 0) / 100;
   const workaroundMinutes = adv.workaroundMinutes || 0;
-  const workaroundCostPerTicket = workaroundPct > 0 ? (custValue * workaroundMinutes / 60) * (workaroundPct / (1 - workaroundPct || 1)) : 0;
+  const workaroundCostPerTicket = (workaroundPct > 0 && workaroundPct < 1)
+    ? (custValue * workaroundMinutes / 60) * (workaroundPct / (1 - workaroundPct))
+    : 0;
 
   // Error/rework: downstream errors caused by the issue
   const errorRate = (adv.errorRatePct || 0) / 100;
@@ -164,7 +171,8 @@ function calcImplementation(inputs, org) {
   const traineeLoaded = loadedHourlyCost(inputs.traineeSalary, org.benefitsMultiplier, org.annualWorkHours);
   const trainingCost = inputs.trainingHoursPerPerson * inputs.numTrainees * traineeLoaded;
   const affectedLoaded = loadedHourlyCost(inputs.affectedSalary, org.benefitsMultiplier, org.annualWorkHours);
-  const productivityLoss = inputs.affectedEmployees * affectedLoaded * 40 * (inputs.productivityDipPct / 100) * inputs.transitionWeeks;
+  const weeklyHours = org.annualWorkHours / 52;
+  const productivityLoss = inputs.affectedEmployees * affectedLoaded * weeklyHours * (inputs.productivityDipPct / 100) * inputs.transitionWeeks;
   const year1Total = directCosts + laborCost + trainingCost + productivityLoss;
   const ongoingAnnual = inputs.recurringLicensing + inputs.ongoingSupport;
   const fiveYearTotal = year1Total + ongoingAnnual * 4;
@@ -178,7 +186,7 @@ function calcDowntime(inputs, org) {
   const lostProdDirect = inputs.affectedEmployees * loaded * inputs.downtimeHours;
   const lostProdTotal = inputs.affectedEmployees * val * inputs.downtimeHours;
   const rev = parseFloat(org.annualRevenue);
-  const lostRevenue = rev > 0 ? (rev / org.annualWorkHours) * inputs.downtimeHours * (inputs.revenueImpactPct / 100) : 0;
+  const lostRevenue = (rev > 0 && org.annualWorkHours > 0) ? (rev / org.annualWorkHours) * inputs.downtimeHours * (inputs.revenueImpactPct / 100) : 0;
   const eventDirect = lostProdDirect + lostRevenue + inputs.recoveryCosts;
   const eventTotal = lostProdTotal + lostRevenue + inputs.recoveryCosts;
   return {
@@ -192,26 +200,31 @@ function calcDowntime(inputs, org) {
 }
 
 // ─── Utility Components ─────────────────────────────────────
-const fmt = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
-const fmtD = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-const fmtPct = (v) => `${v.toFixed(1)}%`;
-const fmtNum = (v) => new Intl.NumberFormat("en-US").format(Math.round(v));
+const fmt = (v) => !isFinite(v) ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+const fmtD = (v) => !isFinite(v) ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+const fmtPct = (v) => !isFinite(v) ? "—" : `${v.toFixed(1)}%`;
+const fmtNum = (v) => !isFinite(v) ? "—" : new Intl.NumberFormat("en-US").format(Math.round(v));
 
+let _inputId = 0;
 function Input({ label, value, onChange, type = "number", ...props }) {
+  const [id] = useState(() => `input-${++_inputId}`);
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input type={type} value={value} onChange={(e) => onChange(type === "number" ? (parseFloat(e.target.value) || 0) : e.target.value)}
+      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input id={id} type={type} value={value}
+        onChange={(e) => onChange(type === "number" ? (parseFloat(e.target.value) || 0) : e.target.value)}
+        {...(type === "number" ? { min: 0 } : {})}
         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" {...props} />
     </div>
   );
 }
 
 function Select({ label, value, onChange, options }) {
+  const [id] = useState(() => `select-${++_inputId}`);
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
+      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)}
         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
         {options.map((o) => <option key={o.value || o} value={o.value || o}>{o.label || o}</option>)}
       </select>
@@ -257,7 +270,8 @@ function StatBox({ label, value, sublabel, color = "gray" }) {
 // ─── Org Settings Panel ─────────────────────────────────────
 function OrgSettings({ org, setOrg }) {
   const [open, setOpen] = useState(false);
-  const revPerEmp = org.annualRevenue && org.totalEmployees > 0 ? parseFloat(org.annualRevenue) / org.totalEmployees : null;
+  const parsedRev = parseFloat(org.annualRevenue);
+  const revPerEmp = (parsedRev > 0 && org.totalEmployees > 0) ? parsedRev / org.totalEmployees : null;
   const exampleLoaded = loadedHourlyCost(55000, org.benefitsMultiplier, org.annualWorkHours);
   const exampleValue = valuePerHour(org, exampleLoaded);
 
@@ -552,8 +566,8 @@ function RecurringIssueTab({ org }) {
           <div className="mt-3 p-3 bg-white rounded-lg">
             <div className="text-xs text-gray-500 mb-1">Daily Cost to Organization</div>
             <div className="flex justify-between">
-              <span className="text-sm text-gray-600">Conservative: <strong>{fmtD(r.annualDirect / 260)}</strong>/day</span>
-              <span className="text-sm text-gray-600">Full Impact: <strong>{fmtD(r.annualTotal / 260)}</strong>/day</span>
+              <span className="text-sm text-gray-600">Conservative: <strong>{fmtD(r.annualDirect / (org.annualWorkHours / 8))}</strong>/day</span>
+              <span className="text-sm text-gray-600">Full Impact: <strong>{fmtD(r.annualTotal / (org.annualWorkHours / 8))}</strong>/day</span>
             </div>
           </div>
         </ResultCard>
@@ -602,6 +616,11 @@ function ImprovementROITab({ org }) {
     discountRate: org.discountRate,
   });
   const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
+
+  // Sync discount rate when org settings change
+  useEffect(() => {
+    setInputs((p) => ({ ...p, discountRate: org.discountRate }));
+  }, [org.discountRate]);
 
   const r = useMemo(() => calcROI(inputs), [inputs]);
 
@@ -894,48 +913,13 @@ function DowntimeCostTab({ org }) {
 }
 
 // ─── Scenario Manager ───────────────────────────────────────
-function ScenarioManager({ currentTab, onLoad }) {
-  const [scenarios, setScenarios] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("tco_scenarios") || "[]"); } catch { return []; }
-  });
-  const [name, setName] = useState("");
-
-  const save = () => {
-    if (!name.trim()) return;
-    const data = { name: name.trim(), tab: currentTab, timestamp: new Date().toISOString() };
-    const updated = [...scenarios, data];
-    setScenarios(updated);
-    localStorage.setItem("tco_scenarios", JSON.stringify(updated));
-    setName("");
-  };
-
-  const exportAll = () => {
-    const blob = new Blob([JSON.stringify(scenarios, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "tco-scenarios.json"; a.click();
-    URL.revokeObjectURL(url);
-  };
-
+function ActionBar() {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 no-print">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-medium text-gray-600">💾 Scenarios:</span>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)}
-          placeholder="Scenario name..." className="px-3 py-1.5 border rounded text-sm flex-1 min-w-[200px]" />
-        <button onClick={save} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Save</button>
-        <button onClick={exportAll} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Export JSON</button>
-        <button onClick={() => window.print()} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">🖨️ Print</button>
+        <button onClick={() => window.print()} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">🖨️ Print / Save PDF</button>
+        <span className="text-xs text-gray-400">Tip: Use your browser's Print → Save as PDF for a clean export. All inputs are kept in your browser between sessions.</span>
       </div>
-      {scenarios.length > 0 && (
-        <div className="mt-2 flex gap-2 flex-wrap">
-          {scenarios.map((s, i) => (
-            <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
-              {s.name} <span className="text-gray-400">({s.tab})</span>
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -945,8 +929,11 @@ function App() {
   const [org, setOrg] = useState(() => {
     try {
       const saved = localStorage.getItem("tco_org_settings");
-      return saved ? { ...DEFAULT_ORG, ...JSON.parse(saved) } : DEFAULT_ORG;
-    } catch { return DEFAULT_ORG; }
+      if (!saved) return { ...DEFAULT_ORG, _v: SCHEMA_VERSION };
+      const parsed = JSON.parse(saved);
+      if (!parsed._v || parsed._v < SCHEMA_VERSION) return { ...DEFAULT_ORG, _v: SCHEMA_VERSION };
+      return { ...DEFAULT_ORG, ...parsed, _v: SCHEMA_VERSION };
+    } catch { return { ...DEFAULT_ORG, _v: SCHEMA_VERSION }; }
   });
 
   const [activeTab, setActiveTab] = useState("recurring");
@@ -991,10 +978,10 @@ function App() {
         {activeTab === "downtime" && <DowntimeCostTab org={org} />}
       </div>
 
-      <ScenarioManager currentTab={activeTab} />
+      <ActionBar />
 
       <div className="mt-4 text-center text-xs text-gray-400 no-print">
-        TCO/ROI Calculator · Formulas based on Forrester TEI, Gartner, and industry benchmarks · Built for {org.orgName} IT Business Analysis
+        TCO/ROI Calculator · Formulas based on Forrester TEI, Gartner, and industry benchmarks · Built for IT Business Analysis
       </div>
     </div>
   );
