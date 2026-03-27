@@ -24,8 +24,8 @@ const { useState, useEffect, useCallback, useMemo } = React;
 
 // ─── Default Data ───────────────────────────────────────────
 const DEFAULT_ORG = {
-  orgName: "Merakey",
-  totalEmployees: 70000,
+  orgName: "My Organization",
+  totalEmployees: 500,
   annualRevenue: "",
   benefitsMultiplier: 1.4,
   valueMultiplier: 2.0,
@@ -311,7 +311,7 @@ function OrgSettings({ org, setOrg }) {
 // ─── Tab 1: Recurring Issue Cost ────────────────────────────
 function RecurringIssueTab({ org }) {
   const [inputs, setInputs] = useState({
-    problemName: "Avatar Access Issues",
+    problemName: "Password Reset Issues",
     customerRole: "Clinical Staff",
     customerSalary: 55000,
     customerTime: 10,
@@ -321,7 +321,7 @@ function RecurringIssueTab({ org }) {
     supportSalary: 35000,
     supportTime: 5,
     resourceCost: 0,
-    annualTickets: 1904,
+    annualTickets: 500,
     reductionPct: 10,
     advanced: {
       avgSupportTouches: 1,
@@ -593,8 +593,8 @@ function RecurringIssueTab({ org }) {
 // ─── Tab 2: Improvement ROI ─────────────────────────────────
 function ImprovementROITab({ org }) {
   const [inputs, setInputs] = useState({
-    scenarioName: "Fix Avatar Access Issues",
-    currentAnnualCost: 66221,
+    scenarioName: "Fix Password Reset Issues",
+    currentAnnualCost: 50000,
     oneTimeInvestment: 25000,
     annualRecurringCost: 5000,
     improvementPct: 50,
