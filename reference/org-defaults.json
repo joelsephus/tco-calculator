@@ -1,0 +1,61 @@
+{
+  "orgName": "Merakey",
+  "totalEmployees": 70000,
+  "annualRevenue": null,
+  "benefitsMultiplier": 1.4,
+  "valueMultiplier": 2.0,
+  "billableUtilization": 0.65,
+  "annualWorkHours": 2080,
+  "discountRate": 0.08,
+  "contextSwitchMinutes": 15,
+  "roles": [
+    {
+      "name": "Direct Service Provider",
+      "defaultSalary": 35000,
+      "category": "frontline"
+    },
+    {
+      "name": "Administrative/Clerical",
+      "defaultSalary": 40000,
+      "category": "admin"
+    },
+    {
+      "name": "Clinical Staff",
+      "defaultSalary": 55000,
+      "category": "clinical"
+    },
+    {
+      "name": "Management/Director",
+      "defaultSalary": 85000,
+      "category": "management"
+    },
+    {
+      "name": "IT/Technical Staff",
+      "defaultSalary": 65000,
+      "category": "technical"
+    },
+    {
+      "name": "C-Suite/Executive",
+      "defaultSalary": 150000,
+      "category": "executive"
+    }
+  ],
+  "supportTiers": [
+    {
+      "name": "Tier 1 Support",
+      "defaultSalary": 35000
+    },
+    {
+      "name": "Tier 2 Support",
+      "defaultSalary": 55000
+    },
+    {
+      "name": "Tier 3/Specialist",
+      "defaultSalary": 75000
+    },
+    {
+      "name": "Manager/Director",
+      "defaultSalary": 90000
+    }
+  ]
+}

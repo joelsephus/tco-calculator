@@ -13,19 +13,38 @@ A tool for accurately calculating the Total Cost of Ownership (TCO) for various 
 ## Scope Boundaries
 
 DO:
-- <!-- What's in scope — to be defined -->
+- Calculate TCO for recurring IT issues (help desk tickets, process inefficiencies)
+- Calculate ROI for proposed improvements and investments
+- Calculate implementation TCO including hidden costs (training, productivity dip)
+- Calculate downtime costs per event and annualized
+- Model opportunity cost using both conservative (loaded cost) and full-impact (revenue-based) methods
+- Support Merakey-specific defaults with configurable org settings
+- Enable sharing via clipboard export, JSON export, and print-to-PDF
 
 DO NOT:
-- <!-- What's explicitly out of scope — to be defined -->
+- Backend server or database — all state is localStorage
+- User authentication or multi-user features
+- Integration with Asana, Jira, or other PM tools
+- Automated data ingestion from ticketing systems
+- Financial modeling beyond 5-year horizon
 
 ## Key Deliverables
-1. <!-- To be defined -->
+1. `src/calculator.html` — Single-file React web app (portable, no build step)
+2. `reference/formula-research.md` — Documented formulas with citations
+3. `reference/org-defaults.json` — Merakey default values
+4. `tools/validate_formulas.py` — Pytest tests validating all calculations
 
 ## Key Decisions
-<!-- Pre-made decisions that constrain the project and shouldn't be revisited -->
+- **Single-file HTML with CDN dependencies** — no build step, maximally portable (email, SharePoint, GitHub Pages)
+- **Revenue-per-employee replaces arbitrary role multipliers** — grounded in organizational data or industry defaults
+- **Conservative/full-impact dual display** — always shows both so user can choose based on audience
+- **Three-row cost breakdown (Direct / Opportunity / Total)** — consistent across all modes, avoids double-counting
+- **localStorage for persistence** — zero infrastructure, scenarios survive page reload
+- **Value multiplier fallback** when revenue data unavailable — default 2.0x loaded cost for healthcare
 
 ## Open Questions
-<!-- Unresolved items that need answers before work can proceed -->
+- What is Merakey's annual revenue? (Needed for revenue-based opportunity cost calculation)
+- Should the calculator be deployed to GitHub Pages or internal SharePoint?
 
 ## Decision Logging
 When I make a significant decision during a session (architecture choice, vendor selection, scope change, stakeholder commitment), append it to decisions.md. Only log decisions, not tasks or notes.
