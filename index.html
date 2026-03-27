@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TCO/ROI Calculator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .print-break { page-break-before: always; }
+      body { font-size: 11pt; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
+
+// ─── Default Data ───────────────────────────────────────────
+const DEFAULT_ORG = {
+  orgName: "Merakey",
+  totalEmployees: 70000,
+  annualRevenue: "",
+  benefitsMultiplier: 1.4,
+  valueMultiplier: 2.0,
+  billableUtilization: 0.65,
+  annualWorkHours: 2080,
+  discountRate: 0.08,
+  contextSwitchMinutes: 15,
+};
+
+const ROLES = [
+  { name: "Direct Service Provider", defaultSalary: 35000 },
+  { name: "Administrative/Clerical", defaultSalary: 40000 },
+  { name: "Clinical Staff", defaultSalary: 55000 },
+  { name: "Management/Director", defaultSalary: 85000 },
+  { name: "IT/Technical Staff", defaultSalary: 65000 },
+  { name: "C-Suite/Executive", defaultSalary: 150000 },
+];
+
+const SUPPORT_TIERS = [
+  { name: "Tier 1 Support", defaultSalary: 35000 },
+  { name: "Tier 2 Support", defaultSalary: 55000 },
+  { name: "Tier 3/Specialist", defaultSalary: 75000 },
+  { name: "Manager/Director", defaultSalary: 90000 },
+];
+
+// ─── Formula Engine ─────────────────────────────────────────
+function loadedHourlyCost(salary, mult, hours = 2080) {
+  return (salary * mult) / hours;
+}
+
+function valuePerHour(org, loadedHourly) {
+  const rev = parseFloat(org.annualRevenue);
+  if (rev > 0 && org.totalEmployees > 0) {
+    const rpe = rev / org.totalEmployees;
+    return (rpe * org.billableUtilization) / org.annualWorkHours;
+  }
+  return loadedHourly * org.valueMultiplier;
+}
+
+function calcTicket(inputs, org) {
+  const custLoaded = loadedHourlyCost(inputs.customerSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const custValue = valuePerHour(org, custLoaded);
+  const custHours = (inputs.customerTime + inputs.holdTime + (inputs.includeContextSwitch ? org.contextSwitchMinutes : 0)) / 60;
+
+  const supLoaded = loadedHourlyCost(inputs.supportSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const supValue = valuePerHour(org, supLoaded);
+  const supHours = inputs.supportTime / 60;
+
+  // Advanced factors (default to zero impact if not provided)
+  const adv = inputs.advanced || {};
+
+  // Multi-touch: additional support contacts beyond the first
+  const avgTouches = adv.avgSupportTouches || 1;
+  const multiTouchMultiplier = avgTouches;
+
+  // Repeat contacts: tickets that don't resolve on first contact
+  const fcrRate = (adv.firstContactResolutionPct || 100) / 100;
+  const repeatMultiplier = fcrRate < 1 ? 1 + (1 - fcrRate) : 1; // unresolved tickets generate another contact
+
+  // Workaround labor: invisible cost from people who don't call
+  const workaroundPct = (adv.workaroundPct || 0) / 100;
+  const workaroundMinutes = adv.workaroundMinutes || 0;
+  const workaroundCostPerTicket = workaroundPct > 0 ? (custValue * workaroundMinutes / 60) * (workaroundPct / (1 - workaroundPct || 1)) : 0;
+
+  // Error/rework: downstream errors caused by the issue
+  const errorRate = (adv.errorRatePct || 0) / 100;
+  const reworkCostPerError = adv.reworkCostPerError || 0;
+  const errorReworkCost = errorRate * reworkCostPerError;
+
+  // Management overhead: supervisor time per escalation
+  const escalationRate = (adv.escalationRatePct || 0) / 100;
+  const mgrMinutes = adv.mgrMinutesPerEscalation || 0;
+  const mgrLoaded = adv.mgrSalary ? loadedHourlyCost(adv.mgrSalary, org.benefitsMultiplier, org.annualWorkHours) : 0;
+  const mgrCostPerTicket = escalationRate * (mgrLoaded * mgrMinutes / 60);
+
+  // Overtime/backlog: work that must be caught up later
+  const overtimePct = (adv.overtimePct || 0) / 100;
+  const overtimeMultiplier = adv.overtimeRate || 1.5;
+  const overtimeCost = overtimePct > 0 ? custLoaded * custHours * overtimePct * (overtimeMultiplier - 1) : 0;
+
+  // Apply multi-touch and repeat multipliers to support cost
+  const adjSupportDirect = supLoaded * supHours * multiTouchMultiplier * repeatMultiplier;
+  const adjSupportOpportunity = (supValue - supLoaded) * supHours * multiTouchMultiplier * repeatMultiplier;
+  const adjSupportTotal = supValue * supHours * multiTouchMultiplier * repeatMultiplier;
+
+  const advancedTotal = workaroundCostPerTicket + errorReworkCost + mgrCostPerTicket + overtimeCost;
+  const hasAdvanced = advancedTotal > 0;
+
+  return {
+    customerDirect: custLoaded * custHours,
+    customerOpportunity: (custValue - custLoaded) * custHours,
+    customerTotal: custValue * custHours,
+    supportDirect: adjSupportDirect,
+    supportOpportunity: adjSupportOpportunity,
+    supportTotal: adjSupportTotal,
+    resourceCost: inputs.resourceCost || 0,
+    // Advanced factor breakdowns
+    workaroundCost: workaroundCostPerTicket,
+    errorReworkCost: errorReworkCost,
+    mgrOverheadCost: mgrCostPerTicket,
+    overtimeCost: overtimeCost,
+    advancedTotal: advancedTotal,
+    hasAdvanced: hasAdvanced,
+    get perTicketDirect() { return this.customerDirect + this.supportDirect + this.resourceCost; },
+    get perTicketOpportunity() { return this.customerOpportunity + this.supportOpportunity; },
+    get perTicketTotal() { return this.customerTotal + this.supportTotal + this.resourceCost + this.advancedTotal; },
+    get annualDirect() { return this.perTicketDirect * inputs.annualTickets; },
+    get annualOpportunity() { return this.perTicketOpportunity * inputs.annualTickets; },
+    get annualTotal() { return this.perTicketTotal * inputs.annualTickets; },
+    get annualAdvanced() { return this.advancedTotal * inputs.annualTickets; },
+  };
+}
+
+function calcROI(inputs) {
+  const annualSavings = inputs.currentAnnualCost * (inputs.improvementPct / 100) * inputs.confidenceFactor;
+  const netAnnualBenefit = annualSavings - inputs.annualRecurringCost;
+  const paybackMonths = netAnnualBenefit > 0 ? inputs.oneTimeInvestment / (netAnnualBenefit / 12) : Infinity;
+  const years = [1, 2, 3, 5];
+  const npvResults = {};
+  const roiResults = {};
+  for (const n of years) {
+    let pvBenefits = 0;
+    for (let y = 1; y <= n; y++) pvBenefits += netAnnualBenefit / Math.pow(1 + inputs.discountRate, y);
+    npvResults[n] = -inputs.oneTimeInvestment + pvBenefits;
+    const totalBenefits = netAnnualBenefit * n;
+    const totalCosts = inputs.oneTimeInvestment + inputs.annualRecurringCost * n;
+    roiResults[n] = totalCosts > 0 ? ((totalBenefits - totalCosts) / totalCosts) * 100 : 0;
+  }
+  return { annualSavings, netAnnualBenefit, paybackMonths, npvResults, roiResults };
+}
+
+function calcImplementation(inputs, org) {
+  const directCosts = inputs.softwareOnetime + inputs.services + inputs.firstYearLicensing;
+  const internalLoaded = loadedHourlyCost(inputs.internalSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const laborCost = inputs.internalHours * internalLoaded;
+  const traineeLoaded = loadedHourlyCost(inputs.traineeSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const trainingCost = inputs.trainingHoursPerPerson * inputs.numTrainees * traineeLoaded;
+  const affectedLoaded = loadedHourlyCost(inputs.affectedSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const productivityLoss = inputs.affectedEmployees * affectedLoaded * 40 * (inputs.productivityDipPct / 100) * inputs.transitionWeeks;
+  const year1Total = directCosts + laborCost + trainingCost + productivityLoss;
+  const ongoingAnnual = inputs.recurringLicensing + inputs.ongoingSupport;
+  const fiveYearTotal = year1Total + ongoingAnnual * 4;
+  const hiddenPct = year1Total > 0 ? ((trainingCost + productivityLoss) / year1Total) * 100 : 0;
+  return { directCosts, laborCost, trainingCost, productivityLoss, year1Total, ongoingAnnual, fiveYearTotal, hiddenPct };
+}
+
+function calcDowntime(inputs, org) {
+  const loaded = loadedHourlyCost(inputs.avgSalary, org.benefitsMultiplier, org.annualWorkHours);
+  const val = valuePerHour(org, loaded);
+  const lostProdDirect = inputs.affectedEmployees * loaded * inputs.downtimeHours;
+  const lostProdTotal = inputs.affectedEmployees * val * inputs.downtimeHours;
+  const rev = parseFloat(org.annualRevenue);
+  const lostRevenue = rev > 0 ? (rev / org.annualWorkHours) * inputs.downtimeHours * (inputs.revenueImpactPct / 100) : 0;
+  const eventDirect = lostProdDirect + lostRevenue + inputs.recoveryCosts;
+  const eventTotal = lostProdTotal + lostRevenue + inputs.recoveryCosts;
+  return {
+    lostProdDirect, lostProdTotal,
+    lostRevenue,
+    recoveryCosts: inputs.recoveryCosts,
+    eventDirect, eventTotal,
+    annualDirect: eventDirect * inputs.eventsPerYear,
+    annualTotal: eventTotal * inputs.eventsPerYear,
+  };
+}
+
+// ─── Utility Components ─────────────────────────────────────
+const fmt = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+const fmtD = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+const fmtPct = (v) => `${v.toFixed(1)}%`;
+const fmtNum = (v) => new Intl.NumberFormat("en-US").format(Math.round(v));
+
+function Input({ label, value, onChange, type = "number", ...props }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input type={type} value={value} onChange={(e) => onChange(type === "number" ? (parseFloat(e.target.value) || 0) : e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" {...props} />
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+        {options.map((o) => <option key={o.value || o} value={o.value || o}>{o.label || o}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function CostRow({ label, direct, opportunity, total, bold = false }) {
+  const cls = bold ? "font-bold text-base" : "text-sm";
+  return (
+    <tr className={cls}>
+      <td className="py-1.5 pr-4 text-gray-700">{label}</td>
+      <td className="py-1.5 px-3 text-right text-gray-600">{fmtD(direct)}</td>
+      <td className="py-1.5 px-3 text-right text-amber-700">{fmtD(opportunity)}</td>
+      <td className="py-1.5 px-3 text-right font-semibold text-gray-900">{fmtD(total)}</td>
+    </tr>
+  );
+}
+
+function ResultCard({ title, icon, color, children }) {
+  const borderColor = { blue: "border-blue-200 bg-blue-50", green: "border-green-200 bg-green-50", amber: "border-amber-200 bg-amber-50", purple: "border-purple-200 bg-purple-50", red: "border-red-200 bg-red-50" }[color] || "border-gray-200 bg-gray-50";
+  return (
+    <div className={`p-4 rounded-lg border-2 ${borderColor}`}>
+      <h3 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <span>{icon}</span> {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function StatBox({ label, value, sublabel, color = "gray" }) {
+  const textColor = { green: "text-green-600", blue: "text-blue-600", red: "text-red-600", amber: "text-amber-600", purple: "text-purple-600" }[color] || "text-gray-800";
+  return (
+    <div className="p-3 bg-white rounded-lg">
+      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className={`text-xl font-bold ${textColor}`}>{value}</div>
+      {sublabel && <div className="text-xs text-gray-400 mt-0.5">{sublabel}</div>}
+    </div>
+  );
+}
+
+// ─── Org Settings Panel ─────────────────────────────────────
+function OrgSettings({ org, setOrg }) {
+  const [open, setOpen] = useState(false);
+  const revPerEmp = org.annualRevenue && org.totalEmployees > 0 ? parseFloat(org.annualRevenue) / org.totalEmployees : null;
+  const exampleLoaded = loadedHourlyCost(55000, org.benefitsMultiplier, org.annualWorkHours);
+  const exampleValue = valuePerHour(org, exampleLoaded);
+
+  return (
+    <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 no-print">
+      <button onClick={() => setOpen(!open)} className="w-full flex justify-between items-center p-4 text-left hover:bg-gray-50">
+        <div>
+          <span className="font-semibold text-gray-700">⚙️ Organization Settings</span>
+          <span className="text-sm text-gray-500 ml-3">{org.orgName} · {fmtNum(org.totalEmployees)} employees · {org.benefitsMultiplier}x benefits</span>
+        </div>
+        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="p-4 pt-0 border-t border-gray-100">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <Input label="Organization Name" type="text" value={org.orgName} onChange={(v) => setOrg({ ...org, orgName: v })} />
+            <Input label="Total Employees" value={org.totalEmployees} onChange={(v) => setOrg({ ...org, totalEmployees: v })} />
+            <Input label="Annual Revenue ($, optional)" value={org.annualRevenue} onChange={(v) => setOrg({ ...org, annualRevenue: v })} />
+            <Input label="Annual Work Hours" value={org.annualWorkHours} onChange={(v) => setOrg({ ...org, annualWorkHours: v })} />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Benefits Multiplier: {org.benefitsMultiplier}x</label>
+              <input type="range" min="1.0" max="2.0" step="0.05" value={org.benefitsMultiplier}
+                onChange={(e) => setOrg({ ...org, benefitsMultiplier: parseFloat(e.target.value) })} className="w-full" />
+              <div className="flex justify-between text-xs text-gray-400"><span>1.0x</span><span>2.0x</span></div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Value Multiplier: {org.valueMultiplier}x</label>
+              <input type="range" min="1.0" max="4.0" step="0.1" value={org.valueMultiplier}
+                onChange={(e) => setOrg({ ...org, valueMultiplier: parseFloat(e.target.value) })} className="w-full" />
+              <div className="flex justify-between text-xs text-gray-400"><span>1.0x (conservative)</span><span>4.0x</span></div>
+            </div>
+            <Input label="Billable Utilization %" value={Math.round(org.billableUtilization * 100)}
+              onChange={(v) => setOrg({ ...org, billableUtilization: v / 100 })} />
+            <Input label="Context Switch Penalty (min)" value={org.contextSwitchMinutes}
+              onChange={(v) => setOrg({ ...org, contextSwitchMinutes: v })} />
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div><span className="font-medium">Example ($55K clinical):</span></div>
+            <div>Loaded hourly: <strong>{fmtD(exampleLoaded)}</strong></div>
+            <div>Value/hour: <strong>{fmtD(exampleValue)}</strong> {!org.annualRevenue && <span className="text-xs text-amber-600">(multiplier-based)</span>}</div>
+            {revPerEmp && <div>Revenue/employee: <strong>{fmt(revPerEmp)}</strong></div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 1: Recurring Issue Cost ────────────────────────────
+function RecurringIssueTab({ org }) {
+  const [inputs, setInputs] = useState({
+    problemName: "Avatar Access Issues",
+    customerRole: "Clinical Staff",
+    customerSalary: 55000,
+    customerTime: 10,
+    holdTime: 15,
+    includeContextSwitch: true,
+    supportTier: "Tier 1 Support",
+    supportSalary: 35000,
+    supportTime: 5,
+    resourceCost: 0,
+    annualTickets: 1904,
+    reductionPct: 10,
+    advanced: {
+      avgSupportTouches: 1,
+      firstContactResolutionPct: 100,
+      workaroundPct: 0,
+      workaroundMinutes: 0,
+      errorRatePct: 0,
+      reworkCostPerError: 0,
+      escalationRatePct: 0,
+      mgrMinutesPerEscalation: 0,
+      mgrSalary: 85000,
+      overtimePct: 0,
+      overtimeRate: 1.5,
+    },
+  });
+  const [advOpen, setAdvOpen] = useState(false);
+
+  const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
+  const setAdv = (field, value) => setInputs((p) => ({ ...p, advanced: { ...p.advanced, [field]: value } }));
+
+  const handleRoleChange = (role) => {
+    const r = ROLES.find((r) => r.name === role);
+    set("customerRole", role);
+    if (r) set("customerSalary", r.defaultSalary);
+  };
+
+  const handleTierChange = (tier) => {
+    const t = SUPPORT_TIERS.find((t) => t.name === tier);
+    set("supportTier", tier);
+    if (t) set("supportSalary", t.defaultSalary);
+  };
+
+  const r = useMemo(() => calcTicket(inputs, org), [inputs, org]);
+
+  const copyResults = () => {
+    const lines = [
+      `TCO Analysis: ${inputs.problemName}`,
+      `Date: ${new Date().toLocaleDateString()}`,
+      `Org: ${org.orgName}`,
+      "",
+      "PER TICKET BREAKDOWN",
+      `${"".padEnd(25)} ${"Direct".padStart(12)} ${"Opp. Cost".padStart(12)} ${"Total".padStart(12)}`,
+      `${"Customer Cost".padEnd(25)} ${fmtD(r.customerDirect).padStart(12)} ${fmtD(r.customerOpportunity).padStart(12)} ${fmtD(r.customerTotal).padStart(12)}`,
+      `${"Support Cost".padEnd(25)} ${fmtD(r.supportDirect).padStart(12)} ${fmtD(r.supportOpportunity).padStart(12)} ${fmtD(r.supportTotal).padStart(12)}`,
+      `${"Resource Cost".padEnd(25)} ${fmtD(r.resourceCost).padStart(12)} ${"—".padStart(12)} ${fmtD(r.resourceCost).padStart(12)}`,
+    ];
+    if (r.hasAdvanced) {
+      lines.push("", "HIDDEN COST FACTORS (per ticket)");
+      if (r.workaroundCost > 0) lines.push(`${"  Workaround Labor".padEnd(25)} ${fmtD(r.workaroundCost).padStart(12)}`);
+      if (r.errorReworkCost > 0) lines.push(`${"  Error/Rework".padEnd(25)} ${fmtD(r.errorReworkCost).padStart(12)}`);
+      if (r.mgrOverheadCost > 0) lines.push(`${"  Mgmt Overhead".padEnd(25)} ${fmtD(r.mgrOverheadCost).padStart(12)}`);
+      if (r.overtimeCost > 0) lines.push(`${"  Overtime/Backlog".padEnd(25)} ${fmtD(r.overtimeCost).padStart(12)}`);
+      lines.push(`${"  TOTAL HIDDEN".padEnd(25)} ${fmtD(r.advancedTotal).padStart(12)}`);
+    }
+    lines.push(
+      "",
+      `${"TOTAL PER TICKET".padEnd(25)} ${fmtD(r.perTicketDirect).padStart(12)} ${fmtD(r.perTicketOpportunity).padStart(12)} ${fmtD(r.perTicketTotal).padStart(12)}`,
+      "",
+      `Annual Volume: ${fmtNum(inputs.annualTickets)} tickets`,
+      `Annual Cost (Conservative): ${fmt(r.annualDirect)}`,
+      `Annual Cost (Full Impact): ${fmt(r.annualTotal)}`,
+    );
+    if (r.hasAdvanced) lines.push(`Annual Hidden Costs: ${fmt(r.annualAdvanced)}`);
+    lines.push("", `${inputs.reductionPct}% Reduction Value: ${fmt(r.annualTotal * inputs.reductionPct / 100)}/year`);
+    navigator.clipboard.writeText(lines.join("\n"));
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Issue Details</h3>
+          <Input label="Problem/Issue Name" type="text" value={inputs.problemName} onChange={(v) => set("problemName", v)} />
+          <Input label="Annual Ticket Volume" value={inputs.annualTickets} onChange={(v) => set("annualTickets", v)} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Customer Impact</h3>
+          <Select label="Customer Role" value={inputs.customerRole} onChange={handleRoleChange}
+            options={ROLES.map((r) => ({ value: r.name, label: `${r.name} (${fmt(r.defaultSalary)})` }))} />
+          <Input label="Customer Base Salary" value={inputs.customerSalary} onChange={(v) => set("customerSalary", v)} />
+          <Input label="Active Time with Issue (min)" value={inputs.customerTime} onChange={(v) => set("customerTime", v)} />
+          <Input label="Hold/Wait Time (min)" value={inputs.holdTime} onChange={(v) => set("holdTime", v)} />
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" checked={inputs.includeContextSwitch}
+              onChange={(e) => set("includeContextSwitch", e.target.checked)} />
+            Include context-switch penalty (+{org.contextSwitchMinutes} min)
+          </label>
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">IT Support Impact</h3>
+          <Select label="Support Tier" value={inputs.supportTier} onChange={handleTierChange}
+            options={SUPPORT_TIERS.map((t) => ({ value: t.name, label: `${t.name} (${fmt(t.defaultSalary)})` }))} />
+          <Input label="Support Staff Base Salary" value={inputs.supportSalary} onChange={(v) => set("supportSalary", v)} />
+          <Input label="Support Resolution Time (min)" value={inputs.supportTime} onChange={(v) => set("supportTime", v)} />
+          <Input label="Additional Resource Cost per Ticket ($)" value={inputs.resourceCost} onChange={(v) => set("resourceCost", v)} />
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
+          <button onClick={() => setAdvOpen(!advOpen)}
+            className="w-full flex justify-between items-center p-4 text-left hover:bg-amber-100 transition-colors">
+            <div>
+              <span className="font-semibold text-amber-800">🔍 Advanced Hidden Cost Factors</span>
+              {r.hasAdvanced && <span className="text-sm text-amber-600 ml-2">+{fmtD(r.advancedTotal)}/ticket</span>}
+            </div>
+            <span className="text-amber-400">{advOpen ? "▲" : "▼"}</span>
+          </button>
+          {advOpen && (
+            <div className="p-4 pt-0 space-y-4">
+              <p className="text-xs text-amber-700">These factors capture costs that are typically invisible in standard TCO analysis. Leave at default values to exclude.</p>
+
+              <div className="bg-white rounded-lg p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Repeat Contacts & Multi-Touch</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="First Contact Resolution %" value={inputs.advanced.firstContactResolutionPct}
+                    onChange={(v) => setAdv("firstContactResolutionPct", v)} />
+                  <Input label="Avg Support Staff per Ticket" value={inputs.advanced.avgSupportTouches}
+                    onChange={(v) => setAdv("avgSupportTouches", v)} step="0.1" />
+                </div>
+                <p className="text-xs text-gray-500">If FCR is 70%, 30% of tickets generate a repeat contact. Avg touches &gt; 1 means escalation to multiple staff.</p>
+              </div>
+
+              <div className="bg-white rounded-lg p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Workaround Labor</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="% of Affected Who Work Around" value={inputs.advanced.workaroundPct}
+                    onChange={(v) => setAdv("workaroundPct", v)} />
+                  <Input label="Workaround Time (min each)" value={inputs.advanced.workaroundMinutes}
+                    onChange={(v) => setAdv("workaroundMinutes", v)} />
+                </div>
+                <p className="text-xs text-gray-500">People who hit the same issue but don't call the help desk — they just lose time working around it. This is invisible ticket volume.</p>
+              </div>
+
+              <div className="bg-white rounded-lg p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Error / Rework Costs</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Tickets Causing Errors (%)" value={inputs.advanced.errorRatePct}
+                    onChange={(v) => setAdv("errorRatePct", v)} />
+                  <Input label="Avg Rework Cost per Error ($)" value={inputs.advanced.reworkCostPerError}
+                    onChange={(v) => setAdv("reworkCostPerError", v)} />
+                </div>
+                <p className="text-xs text-gray-500">Downstream errors from the issue (wrong billing codes, duplicate data entry, incorrect documentation). Healthcare claim rework averages $25–$118/claim.</p>
+              </div>
+
+              <div className="bg-white rounded-lg p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Management Overhead</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <Input label="Escalation Rate (%)" value={inputs.advanced.escalationRatePct}
+                    onChange={(v) => setAdv("escalationRatePct", v)} />
+                  <Input label="Mgr Time per Escalation (min)" value={inputs.advanced.mgrMinutesPerEscalation}
+                    onChange={(v) => setAdv("mgrMinutesPerEscalation", v)} />
+                  <Input label="Manager Base Salary" value={inputs.advanced.mgrSalary}
+                    onChange={(v) => setAdv("mgrSalary", v)} />
+                </div>
+                <p className="text-xs text-gray-500">Supervisor time spent on escalations, exceptions, approvals, and complaints related to this issue.</p>
+              </div>
+
+              <div className="bg-white rounded-lg p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Overtime / Backlog</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="% of Lost Work Requiring Catch-Up" value={inputs.advanced.overtimePct}
+                    onChange={(v) => setAdv("overtimePct", v)} />
+                  <Input label="Overtime Rate Multiplier" value={inputs.advanced.overtimeRate}
+                    onChange={(v) => setAdv("overtimeRate", v)} step="0.1" />
+                </div>
+                <p className="text-xs text-gray-500">Work that didn't happen during the disruption still needs to get done — often at overtime rates (1.5x default).</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ResultCard title="Per-Ticket Cost Breakdown" icon="💰" color="blue">
+          <table className="w-full">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b">
+                <th className="py-1 text-left">Component</th>
+                <th className="py-1 px-3 text-right">Direct Cost</th>
+                <th className="py-1 px-3 text-right">Opp. Cost</th>
+                <th className="py-1 px-3 text-right">Total Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              <CostRow label="Customer Cost" direct={r.customerDirect} opportunity={r.customerOpportunity} total={r.customerTotal} />
+              <CostRow label="Support Cost" direct={r.supportDirect} opportunity={r.supportOpportunity} total={r.supportTotal} />
+              {r.resourceCost > 0 && <CostRow label="Resource Cost" direct={r.resourceCost} opportunity={0} total={r.resourceCost} />}
+              {r.hasAdvanced && (
+                <>
+                  <tr><td colSpan={4} className="pt-2 pb-1"><span className="text-xs font-medium text-amber-700">Hidden Cost Factors</span></td></tr>
+                  {r.workaroundCost > 0 && <tr className="text-sm text-amber-800">
+                    <td className="py-1 pr-4">Workaround Labor</td><td className="py-1 px-3 text-right" colSpan={2}></td><td className="py-1 px-3 text-right font-semibold">{fmtD(r.workaroundCost)}</td>
+                  </tr>}
+                  {r.errorReworkCost > 0 && <tr className="text-sm text-amber-800">
+                    <td className="py-1 pr-4">Error/Rework</td><td className="py-1 px-3 text-right" colSpan={2}></td><td className="py-1 px-3 text-right font-semibold">{fmtD(r.errorReworkCost)}</td>
+                  </tr>}
+                  {r.mgrOverheadCost > 0 && <tr className="text-sm text-amber-800">
+                    <td className="py-1 pr-4">Mgmt Overhead</td><td className="py-1 px-3 text-right" colSpan={2}></td><td className="py-1 px-3 text-right font-semibold">{fmtD(r.mgrOverheadCost)}</td>
+                  </tr>}
+                  {r.overtimeCost > 0 && <tr className="text-sm text-amber-800">
+                    <td className="py-1 pr-4">Overtime/Backlog</td><td className="py-1 px-3 text-right" colSpan={2}></td><td className="py-1 px-3 text-right font-semibold">{fmtD(r.overtimeCost)}</td>
+                  </tr>}
+                </>
+              )}
+              <tr><td colSpan={4}><hr className="my-1 border-gray-300" /></td></tr>
+              <CostRow label="Total Per Ticket" direct={r.perTicketDirect} opportunity={r.perTicketOpportunity} total={r.perTicketTotal} bold />
+            </tbody>
+          </table>
+        </ResultCard>
+
+        <ResultCard title="Annual Impact" icon="📊" color="purple">
+          <div className="grid grid-cols-2 gap-3">
+            <StatBox label="Conservative (Direct Only)" value={fmt(r.annualDirect)} sublabel={`${fmtNum(inputs.annualTickets)} tickets × ${fmtD(r.perTicketDirect)}`} color="blue" />
+            <StatBox label="Full Impact (Direct + Opp. + Hidden)" value={fmt(r.annualTotal)} sublabel={`${fmtNum(inputs.annualTickets)} tickets × ${fmtD(r.perTicketTotal)}`} color="purple" />
+          </div>
+          {r.hasAdvanced && (
+            <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+              <div className="text-xs font-medium text-amber-700 mb-2">Annual Hidden Cost Breakdown</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                {r.workaroundCost > 0 && <><span className="text-gray-600">Workaround Labor</span><span className="text-right font-semibold text-amber-700">{fmt(r.workaroundCost * inputs.annualTickets)}/yr</span></>}
+                {r.errorReworkCost > 0 && <><span className="text-gray-600">Error/Rework</span><span className="text-right font-semibold text-amber-700">{fmt(r.errorReworkCost * inputs.annualTickets)}/yr</span></>}
+                {r.mgrOverheadCost > 0 && <><span className="text-gray-600">Mgmt Overhead</span><span className="text-right font-semibold text-amber-700">{fmt(r.mgrOverheadCost * inputs.annualTickets)}/yr</span></>}
+                {r.overtimeCost > 0 && <><span className="text-gray-600">Overtime/Backlog</span><span className="text-right font-semibold text-amber-700">{fmt(r.overtimeCost * inputs.annualTickets)}/yr</span></>}
+                <span className="text-gray-700 font-medium pt-1 border-t border-amber-200">Total Hidden Costs</span>
+                <span className="text-right font-bold text-amber-800 pt-1 border-t border-amber-200">{fmt(r.annualAdvanced)}/yr</span>
+              </div>
+            </div>
+          )}
+          <div className="mt-3 p-3 bg-white rounded-lg">
+            <div className="text-xs text-gray-500 mb-1">Daily Cost to Organization</div>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">Conservative: <strong>{fmtD(r.annualDirect / 260)}</strong>/day</span>
+              <span className="text-sm text-gray-600">Full Impact: <strong>{fmtD(r.annualTotal / 260)}</strong>/day</span>
+            </div>
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Improvement Opportunities" icon="📈" color="green">
+          <div className="mb-3">
+            <label className="text-sm text-gray-600">
+              Reduction target: <strong>{inputs.reductionPct}%</strong>
+              ({fmtNum(Math.round(inputs.annualTickets * inputs.reductionPct / 100))} fewer tickets)
+            </label>
+            <input type="range" min="5" max="100" step="5" value={inputs.reductionPct}
+              onChange={(e) => set("reductionPct", parseInt(e.target.value))} className="w-full" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <StatBox label={`${inputs.reductionPct}% Reduction Saves`} value={`${fmt(r.annualTotal * inputs.reductionPct / 100)}/yr`} color="green" />
+            <StatBox label="Break-Even Investment (1yr)" value={fmt(r.annualTotal * inputs.reductionPct / 100)}
+              sublabel="Max spend that pays for itself in one year" color="green" />
+          </div>
+        </ResultCard>
+
+        <div className="flex gap-2 no-print">
+          <button onClick={copyResults} className="px-4 py-2 bg-gray-600 text-white rounded-md text-sm hover:bg-gray-700">
+            📋 Copy as Text
+          </button>
+        </div>
+
+        <div className="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg">
+          <strong>Method:</strong> Direct Cost = Loaded Hourly × Wasted Hours. Opportunity Cost = (Value/Hr − Loaded/Hr) × Wasted Hours.
+          Total customer time: {inputs.customerTime + inputs.holdTime + (inputs.includeContextSwitch ? org.contextSwitchMinutes : 0)} min.
+          {!org.annualRevenue && " Value/Hr uses multiplier method (enter org revenue for revenue-based calculation)."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 2: Improvement ROI ─────────────────────────────────
+function ImprovementROITab({ org }) {
+  const [inputs, setInputs] = useState({
+    scenarioName: "Fix Avatar Access Issues",
+    currentAnnualCost: 66221,
+    oneTimeInvestment: 25000,
+    annualRecurringCost: 5000,
+    improvementPct: 50,
+    confidenceFactor: 0.8,
+    discountRate: org.discountRate,
+  });
+  const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
+
+  const r = useMemo(() => calcROI(inputs), [inputs]);
+
+  const confidenceLabels = { 0.6: "Conservative", 0.8: "Moderate", 1.0: "Aggressive" };
+  const closestLabel = confidenceLabels[inputs.confidenceFactor] || `${Math.round(inputs.confidenceFactor * 100)}%`;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Scenario</h3>
+          <Input label="Scenario Name" type="text" value={inputs.scenarioName} onChange={(v) => set("scenarioName", v)} />
+          <Input label="Current Annual Cost (from Tab 1 or manual)" value={inputs.currentAnnualCost} onChange={(v) => set("currentAnnualCost", v)} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Proposed Solution</h3>
+          <Input label="One-Time Investment ($)" value={inputs.oneTimeInvestment} onChange={(v) => set("oneTimeInvestment", v)} />
+          <Input label="Annual Recurring Cost ($)" value={inputs.annualRecurringCost} onChange={(v) => set("annualRecurringCost", v)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Expected Improvement: {inputs.improvementPct}%</label>
+            <input type="range" min="5" max="100" step="5" value={inputs.improvementPct}
+              onChange={(e) => set("improvementPct", parseInt(e.target.value))} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confidence Level: {closestLabel} ({Math.round(inputs.confidenceFactor * 100)}%)</label>
+            <input type="range" min="0.4" max="1.0" step="0.1" value={inputs.confidenceFactor}
+              onChange={(e) => set("confidenceFactor", parseFloat(e.target.value))} className="w-full" />
+            <div className="flex justify-between text-xs text-gray-400"><span>Conservative (40%)</span><span>Aggressive (100%)</span></div>
+          </div>
+          <Input label="Discount Rate (%)" value={Math.round(inputs.discountRate * 100)}
+            onChange={(v) => set("discountRate", v / 100)} />
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ResultCard title="Annual Benefit" icon="💵" color="green">
+          <div className="grid grid-cols-2 gap-3">
+            <StatBox label="Annual Savings (adjusted)" value={fmt(r.annualSavings)} sublabel={`${inputs.improvementPct}% × ${Math.round(inputs.confidenceFactor * 100)}% confidence`} color="green" />
+            <StatBox label="Net Annual Benefit" value={fmt(r.netAnnualBenefit)} sublabel={`Savings minus ${fmt(inputs.annualRecurringCost)}/yr recurring`} color={r.netAnnualBenefit > 0 ? "green" : "red"} />
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Payback & ROI" icon="🎯" color="blue">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <StatBox label="Simple Payback Period" value={r.paybackMonths === Infinity ? "Never" : `${r.paybackMonths.toFixed(1)} months`}
+              color={r.paybackMonths <= 24 ? "green" : r.paybackMonths <= 60 ? "amber" : "red"} />
+            <StatBox label="3-Year ROI" value={r.roiResults[3] !== undefined ? fmtPct(r.roiResults[3]) : "—"} color={r.roiResults[3] > 0 ? "green" : "red"} />
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-xs text-gray-500 border-b">
+              <th className="py-1 text-left">Horizon</th><th className="py-1 text-right">NPV</th><th className="py-1 text-right">ROI</th>
+            </tr></thead>
+            <tbody>
+              {[1, 2, 3, 5].map((y) => (
+                <tr key={y} className={r.npvResults[y] >= 0 ? "text-green-700" : "text-red-600"}>
+                  <td className="py-1">{y}-year</td>
+                  <td className="py-1 text-right">{fmt(r.npvResults[y])}</td>
+                  <td className="py-1 text-right">{fmtPct(r.roiResults[y])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ResultCard>
+
+        <ResultCard title="Decision Summary" icon="📝" color={r.npvResults[3] > 0 ? "green" : "red"}>
+          <div className="text-sm text-gray-700 space-y-2">
+            {r.paybackMonths <= 12 && <p>✅ <strong>Strong investment.</strong> Pays for itself in under 12 months.</p>}
+            {r.paybackMonths > 12 && r.paybackMonths <= 36 && <p>🟡 <strong>Reasonable investment.</strong> Payback in {r.paybackMonths.toFixed(0)} months — confirm strategic alignment.</p>}
+            {r.paybackMonths > 36 && r.paybackMonths < Infinity && <p>⚠️ <strong>Long payback ({r.paybackMonths.toFixed(0)} months).</strong> Consider whether non-financial benefits justify the investment.</p>}
+            {r.paybackMonths === Infinity && <p>🚫 <strong>Negative return.</strong> Annual savings don't cover recurring costs. Re-evaluate scope or cost.</p>}
+            <p className="text-xs text-gray-500">
+              Investing {fmt(inputs.oneTimeInvestment)} to address an annual {fmt(inputs.currentAnnualCost)} problem.
+              At {inputs.improvementPct}% improvement ({closestLabel} confidence), 3-year NPV = {fmt(r.npvResults[3])}.
+            </p>
+          </div>
+        </ResultCard>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 3: Implementation TCO ──────────────────────────────
+function ImplementationTCOTab({ org }) {
+  const [inputs, setInputs] = useState({
+    projectName: "New Scheduling System",
+    softwareOnetime: 150000,
+    services: 100000,
+    firstYearLicensing: 50000,
+    recurringLicensing: 50000,
+    ongoingSupport: 10000,
+    internalHours: 500,
+    internalSalary: 85000,
+    trainingHoursPerPerson: 40,
+    numTrainees: 200,
+    traineeSalary: 55000,
+    affectedEmployees: 200,
+    affectedSalary: 55000,
+    productivityDipPct: 25,
+    transitionWeeks: 12,
+  });
+  const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
+  const r = useMemo(() => calcImplementation(inputs, org), [inputs, org]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Project</h3>
+          <Input label="Project Name" type="text" value={inputs.projectName} onChange={(v) => set("projectName", v)} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Direct Costs</h3>
+          <Input label="Software/Hardware (one-time)" value={inputs.softwareOnetime} onChange={(v) => set("softwareOnetime", v)} />
+          <Input label="Implementation Services" value={inputs.services} onChange={(v) => set("services", v)} />
+          <Input label="First Year Licensing" value={inputs.firstYearLicensing} onChange={(v) => set("firstYearLicensing", v)} />
+          <Input label="Ongoing Annual Licensing" value={inputs.recurringLicensing} onChange={(v) => set("recurringLicensing", v)} />
+          <Input label="Ongoing Annual Support" value={inputs.ongoingSupport} onChange={(v) => set("ongoingSupport", v)} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Internal Labor</h3>
+          <Input label="Internal Staff Hours (PM, dev, etc.)" value={inputs.internalHours} onChange={(v) => set("internalHours", v)} />
+          <Input label="Internal Staff Avg Base Salary" value={inputs.internalSalary} onChange={(v) => set("internalSalary", v)} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Training & Productivity Impact</h3>
+          <Input label="Training Hours per Person" value={inputs.trainingHoursPerPerson} onChange={(v) => set("trainingHoursPerPerson", v)} />
+          <Input label="Number of Trainees" value={inputs.numTrainees} onChange={(v) => set("numTrainees", v)} />
+          <Input label="Trainee Avg Base Salary" value={inputs.traineeSalary} onChange={(v) => set("traineeSalary", v)} />
+          <Input label="Employees Affected by Productivity Dip" value={inputs.affectedEmployees} onChange={(v) => set("affectedEmployees", v)} />
+          <Input label="Affected Employee Avg Base Salary" value={inputs.affectedSalary} onChange={(v) => set("affectedSalary", v)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Productivity Dip: {inputs.productivityDipPct}%</label>
+            <input type="range" min="5" max="75" step="5" value={inputs.productivityDipPct}
+              onChange={(e) => set("productivityDipPct", parseInt(e.target.value))} className="w-full" />
+          </div>
+          <Input label="Transition Duration (weeks)" value={inputs.transitionWeeks} onChange={(v) => set("transitionWeeks", v)} />
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ResultCard title="Year 1 TCO Breakdown" icon="🏗️" color="blue">
+          <div className="space-y-2">
+            {[
+              { label: "Direct Costs (SW/HW/Services/Licensing)", value: r.directCosts, pct: r.year1Total > 0 ? r.directCosts / r.year1Total * 100 : 0 },
+              { label: "Internal Labor", value: r.laborCost, pct: r.year1Total > 0 ? r.laborCost / r.year1Total * 100 : 0 },
+              { label: "Training Cost", value: r.trainingCost, pct: r.year1Total > 0 ? r.trainingCost / r.year1Total * 100 : 0 },
+              { label: "Productivity Loss", value: r.productivityLoss, pct: r.year1Total > 0 ? r.productivityLoss / r.year1Total * 100 : 0 },
+            ].map(({ label, value, pct }) => (
+              <div key={label} className="flex justify-between items-center text-sm">
+                <span className="text-gray-600">{label}</span>
+                <div className="text-right">
+                  <span className="font-semibold">{fmt(value)}</span>
+                  <span className="text-xs text-gray-400 ml-2">({fmtPct(pct)})</span>
+                </div>
+              </div>
+            ))}
+            <hr className="border-gray-300" />
+            <div className="flex justify-between items-center font-bold text-base">
+              <span>Year 1 Total TCO</span>
+              <span className="text-blue-600">{fmt(r.year1Total)}</span>
+            </div>
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Multi-Year TCO" icon="📅" color="purple">
+          <div className="grid grid-cols-3 gap-3">
+            <StatBox label="Year 1" value={fmt(r.year1Total)} color="blue" />
+            <StatBox label="Year 2–5 (annual)" value={fmt(r.ongoingAnnual)} color="purple" />
+            <StatBox label="5-Year Total" value={fmt(r.fiveYearTotal)} color="purple" />
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Hidden Cost Analysis" icon="🔍" color="amber">
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Apparent cost (direct only)</span>
+              <span className="font-semibold">{fmt(r.directCosts)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Hidden costs (training + productivity)</span>
+              <span className="font-semibold text-amber-600">{fmt(r.trainingCost + r.productivityLoss)}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden mt-2">
+              <div className="h-full rounded-full bg-blue-500 float-left" style={{ width: `${100 - r.hiddenPct}%` }}></div>
+              <div className="h-full rounded-full bg-amber-500 float-left" style={{ width: `${r.hiddenPct}%` }}></div>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>Visible: {fmtPct(100 - r.hiddenPct)}</span>
+              <span>Hidden: {fmtPct(r.hiddenPct)}</span>
+            </div>
+            <p className="text-sm text-amber-700 bg-amber-50 rounded p-2 mt-2">
+              ⚠️ Training and productivity loss account for <strong>{fmtPct(r.hiddenPct)}</strong> of Year 1 TCO.
+              The apparent cost of {fmt(r.directCosts)} understates the true investment by {fmt(r.year1Total - r.directCosts)}.
+            </p>
+          </div>
+        </ResultCard>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 4: Downtime Cost ───────────────────────────────────
+function DowntimeCostTab({ org }) {
+  const [inputs, setInputs] = useState({
+    eventName: "System Outage",
+    affectedEmployees: 200,
+    avgSalary: 55000,
+    downtimeHours: 1,
+    revenueImpactPct: 0,
+    recoveryCosts: 0,
+    eventsPerYear: 4,
+  });
+  const set = (field, value) => setInputs((p) => ({ ...p, [field]: value }));
+  const r = useMemo(() => calcDowntime(inputs, org), [inputs, org]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Downtime Event</h3>
+          <Input label="Event Name" type="text" value={inputs.eventName} onChange={(v) => set("eventName", v)} />
+          <Input label="Affected Employees" value={inputs.affectedEmployees} onChange={(v) => set("affectedEmployees", v)} />
+          <Input label="Avg Base Salary of Affected" value={inputs.avgSalary} onChange={(v) => set("avgSalary", v)} />
+          <Input label="Downtime Duration (hours)" value={inputs.downtimeHours} onChange={(v) => set("downtimeHours", v)} step="0.5" />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+          <h3 className="font-semibold text-gray-700">Additional Impacts</h3>
+          <Input label="Revenue Impact (%)" value={inputs.revenueImpactPct} onChange={(v) => set("revenueImpactPct", v)} />
+          {!org.annualRevenue && <p className="text-xs text-amber-600">Enter org revenue in settings above to calculate revenue loss.</p>}
+          <Input label="Recovery/Remediation Costs ($)" value={inputs.recoveryCosts} onChange={(v) => set("recoveryCosts", v)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Expected Events per Year: {inputs.eventsPerYear}</label>
+            <input type="range" min="1" max="52" step="1" value={inputs.eventsPerYear}
+              onChange={(e) => set("eventsPerYear", parseInt(e.target.value))} className="w-full" />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ResultCard title="Per-Event Cost" icon="⚡" color="red">
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Lost Productivity (Direct)</span>
+              <span className="font-semibold">{fmt(r.lostProdDirect)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Lost Productivity (Full Impact)</span>
+              <span className="font-semibold text-amber-600">{fmt(r.lostProdTotal)}</span>
+            </div>
+            {r.lostRevenue > 0 && <div className="flex justify-between">
+              <span className="text-gray-600">Lost Revenue</span>
+              <span className="font-semibold">{fmt(r.lostRevenue)}</span>
+            </div>}
+            {r.recoveryCosts > 0 && <div className="flex justify-between">
+              <span className="text-gray-600">Recovery Costs</span>
+              <span className="font-semibold">{fmt(r.recoveryCosts)}</span>
+            </div>}
+            <hr className="border-gray-300" />
+            <div className="flex justify-between font-bold">
+              <span>Total per Event (Conservative)</span>
+              <span className="text-blue-600">{fmt(r.eventDirect)}</span>
+            </div>
+            <div className="flex justify-between font-bold">
+              <span>Total per Event (Full Impact)</span>
+              <span className="text-red-600">{fmt(r.eventTotal)}</span>
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-gray-500">
+            Cost per minute of downtime: {fmtD(r.eventTotal / (inputs.downtimeHours * 60))}
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Annualized Impact" icon="📆" color="purple">
+          <div className="grid grid-cols-2 gap-3">
+            <StatBox label={`Conservative (${inputs.eventsPerYear} events/yr)`} value={fmt(r.annualDirect)} color="blue" />
+            <StatBox label={`Full Impact (${inputs.eventsPerYear} events/yr)`} value={fmt(r.annualTotal)} color="red" />
+          </div>
+        </ResultCard>
+
+        <ResultCard title="Prevention ROI" icon="🛡️" color="green">
+          <div className="text-sm text-gray-700 space-y-2">
+            <p>Eliminating these events saves <strong>{fmt(r.annualTotal)}/year</strong> (full impact).</p>
+            <p>An investment of up to <strong>{fmt(r.annualTotal * 3)}</strong> would pay for itself within 3 years.</p>
+            {inputs.downtimeHours >= 4 && <p className="text-amber-700">⚠️ Extended outages ({inputs.downtimeHours}+ hours) may also incur compliance, patient safety, and reputational costs not captured here.</p>}
+          </div>
+        </ResultCard>
+      </div>
+    </div>
+  );
+}
+
+// ─── Scenario Manager ───────────────────────────────────────
+function ScenarioManager({ currentTab, onLoad }) {
+  const [scenarios, setScenarios] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("tco_scenarios") || "[]"); } catch { return []; }
+  });
+  const [name, setName] = useState("");
+
+  const save = () => {
+    if (!name.trim()) return;
+    const data = { name: name.trim(), tab: currentTab, timestamp: new Date().toISOString() };
+    const updated = [...scenarios, data];
+    setScenarios(updated);
+    localStorage.setItem("tco_scenarios", JSON.stringify(updated));
+    setName("");
+  };
+
+  const exportAll = () => {
+    const blob = new Blob([JSON.stringify(scenarios, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "tco-scenarios.json"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 no-print">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm font-medium text-gray-600">💾 Scenarios:</span>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+          placeholder="Scenario name..." className="px-3 py-1.5 border rounded text-sm flex-1 min-w-[200px]" />
+        <button onClick={save} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Save</button>
+        <button onClick={exportAll} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Export JSON</button>
+        <button onClick={() => window.print()} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">🖨️ Print</button>
+      </div>
+      {scenarios.length > 0 && (
+        <div className="mt-2 flex gap-2 flex-wrap">
+          {scenarios.map((s, i) => (
+            <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+              {s.name} <span className="text-gray-400">({s.tab})</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ───────────────────────────────────────────────
+function App() {
+  const [org, setOrg] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tco_org_settings");
+      return saved ? { ...DEFAULT_ORG, ...JSON.parse(saved) } : DEFAULT_ORG;
+    } catch { return DEFAULT_ORG; }
+  });
+
+  const [activeTab, setActiveTab] = useState("recurring");
+
+  useEffect(() => {
+    localStorage.setItem("tco_org_settings", JSON.stringify(org));
+  }, [org]);
+
+  const tabs = [
+    { id: "recurring", label: "Recurring Issue Cost", icon: "🔄" },
+    { id: "roi", label: "Improvement ROI", icon: "📈" },
+    { id: "implementation", label: "Implementation TCO", icon: "🏗️" },
+    { id: "downtime", label: "Downtime Cost", icon: "⚡" },
+  ];
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 md:p-6">
+      <div className="mb-4">
+        <h1 className="text-3xl font-bold text-gray-800 mb-1">TCO / ROI Calculator</h1>
+        <p className="text-gray-500 text-sm">Total Cost of Ownership and Return on Investment analysis with opportunity cost modeling</p>
+      </div>
+
+      <OrgSettings org={org} setOrg={setOrg} />
+
+      <div className="flex gap-1 mb-4 overflow-x-auto no-print">
+        {tabs.map((tab) => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 rounded-t-lg text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab.id
+                ? "bg-white text-blue-600 border border-b-0 border-gray-200 shadow-sm"
+                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+            }`}>
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6 mb-4">
+        {activeTab === "recurring" && <RecurringIssueTab org={org} />}
+        {activeTab === "roi" && <ImprovementROITab org={org} />}
+        {activeTab === "implementation" && <ImplementationTCOTab org={org} />}
+        {activeTab === "downtime" && <DowntimeCostTab org={org} />}
+      </div>
+
+      <ScenarioManager currentTab={activeTab} />
+
+      <div className="mt-4 text-center text-xs text-gray-400 no-print">
+        TCO/ROI Calculator · Formulas based on Forrester TEI, Gartner, and industry benchmarks · Built for {org.orgName} IT Business Analysis
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
