@@ -1074,11 +1074,7 @@ function DowntimeCostTab({ org }) {
           <Input label="Revenue Impact (%)" value={inputs.revenueImpactPct} onChange={(v) => set("revenueImpactPct", v)} />
           {!org.annualRevenue && <p className="text-xs text-amber-600">Enter org revenue in settings above to calculate revenue loss.</p>}
           <Input label="Recovery/Remediation Costs ($)" value={inputs.recoveryCosts} onChange={(v) => set("recoveryCosts", v)} />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Expected Events per Year: {inputs.eventsPerYear}</label>
-            <input type="range" min="1" max="52" step="1" value={inputs.eventsPerYear}
-              onChange={(e) => set("eventsPerYear", parseInt(e.target.value))} className="w-full" />
-          </div>
+          <Input label="Expected Events per Year" value={inputs.eventsPerYear} onChange={(v) => set("eventsPerYear", v)} />
         </div>
       </div>
 
