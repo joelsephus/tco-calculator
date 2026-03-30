@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python classify_fuzzy_matches.py)",
+      "Bash(python -c \":*)",
+      "Bash(python regenerate_plan.py)",
+      "mcp__claude_ai_Airtable__list_records_for_table"
+    ]
+  }
+}
